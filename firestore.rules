@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Master Gate & Denial by Default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isStaff() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff'];
+    }
+
+    // --- Collections ---
+
+    // Categories: Managed by Admins, Read by Staff
+    match /categories/{categoryId} {
+      allow read: if isStaff();
+      allow write: if isAdmin() && isValidId(categoryId);
+    }
+
+    // Vendors: Created/Managed by Admins, Updated during payment by Staff
+    match /vendors/{vendorId} {
+      allow read: if isStaff();
+      allow create: if isAdmin() && isValidId(vendorId);
+      allow update: if isStaff() && (
+        // Action: Update Payment Totals (Only totalPaid and status changes)
+        incoming().diff(existing()).affectedKeys().hasOnly(['totalPaid', 'status', 'lastPaymentDate'])
+        || isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Payments: Created by Staff, Immutable once written
+    match /payments/{paymentId} {
+      allow read: if isStaff();
+      allow create: if isStaff() 
+        && isValidId(paymentId)
+        && incoming().collectedBy == request.auth.uid
+        && incoming().amount > 0
+        && exists(/databases/$(database)/documents/vendors/$(incoming().vendorId));
+      allow update, delete: if isAdmin();
+    }
+
+    // Users: Profiles and roles
+    match /users/{uid} {
+      allow read: if isSignedIn();
+      // Allow self-creation for registration
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      // Only admins can change roles
+      allow update: if isAdmin() || (request.auth.uid == uid && !incoming().diff(existing()).affectedKeys().hasAny(['role']));
+      allow delete: if isAdmin();
+    }
+  }
+}

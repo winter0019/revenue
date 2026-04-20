@@ -1,0 +1,76 @@
+{
+  "entities": {
+    "Category": {
+      "title": "Category",
+      "description": "Vendor categories with pricing",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "defaultPrice": { "type": "number", "description": "Standard fee for this category" },
+        "color": { "type": "string", "description": "Tailwind color class for UI" }
+      },
+      "required": ["name"]
+    },
+    "Vendor": {
+      "title": "Vendor",
+      "description": "Individual vendors in the camp market",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "categoryName": { "type": "string" },
+        "totalDue": { "type": "number" },
+        "totalPaid": { "type": "number" },
+        "status": { "type": "string", "enum": ["Paid", "Not Paid", "Partial"] },
+        "lastPaymentDate": { "type": "string", "format": "date-time" },
+        "phone": { "type": "string", "description": "Vendor contact number" }
+      },
+      "required": ["name", "categoryId"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Payment records for vendors",
+      "type": "object",
+      "properties": {
+        "vendorId": { "type": "string" },
+        "vendorName": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "receiptId": { "type": "string" },
+        "collectedBy": { "type": "string", "description": "User ID of the staff member" },
+        "status": { "type": "string", "enum": ["Success", "Pending"] }
+      },
+      "required": ["vendorId", "amount", "date"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Staff and Admin users",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "staff"] },
+        "name": { "type": "string" }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Master list of categories"
+    },
+    "/vendors/{vendorId}": {
+      "schema": "Vendor",
+      "description": "Master list of vendors"
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Collection of payment transactions"
+    },
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles and roles"
+    }
+  }
+}
