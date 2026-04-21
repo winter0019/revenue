@@ -9,8 +9,9 @@ export interface Category {
 export interface Vendor {
   id: string;
   name: string;
-  categoryId: string;
-  categoryName: string;
+  proprietor?: string;
+  categoryIds: string[];
+  categoryNames: string[];
   totalDue: number;
   totalPaid: number;
   status: 'Paid' | 'Not Paid' | 'Partial';

@@ -33,6 +33,10 @@ import {
   Printer,
   ChevronRight,
   TrendingUp,
+  TrendingDown,
+  BarChart2,
+  DollarSign,
+  Phone,
   Wallet,
   ShieldCheck,
   User as UserIcon,
@@ -89,6 +93,15 @@ export default function App() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
+  const [toasts, setToasts] = useState<{id: string, message: string, type: 'success' | 'error'}[]>([]);
+
+  const addToast = (message: string, type: 'success' | 'error' = 'success') => {
+    const id = Math.random().toString(36).substr(2, 9);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  };
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -186,8 +199,8 @@ export default function App() {
           const vDoc = doc(collection(db, 'vendors'));
           await setDoc(vDoc, {
             name: vName,
-            categoryId: catId,
-            categoryName: catName,
+            categoryIds: [catId],
+            categoryNames: [catName],
             totalDue: defaultPrice,
             totalPaid: 0,
             status: 'Not Paid'
@@ -207,8 +220,12 @@ export default function App() {
 
   const filteredVendors = useMemo(() => {
     return vendors.filter(v => {
-      const matchSearch = v.name.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchCat = categoryFilter === 'all' || v.categoryId === categoryFilter;
+      const searchStr = searchTerm.toLowerCase();
+      const matchSearch = 
+        v.name.toLowerCase().includes(searchStr) || 
+        (v.proprietor || '').toLowerCase().includes(searchStr) ||
+        v.id.toLowerCase().includes(searchStr);
+      const matchCat = categoryFilter === 'all' || (v.categoryIds || []).includes(categoryFilter);
       const matchStatus = statusFilter === 'all' || v.status === statusFilter;
       return matchSearch && matchCat && matchStatus;
     });
@@ -223,8 +240,8 @@ export default function App() {
 
     const catData = categories.map(cat => ({
       name: cat.name,
-      collected: vendors.filter(v => v.categoryId === cat.id).reduce((acc, v) => acc + v.totalPaid, 0),
-      expected: vendors.filter(v => v.categoryId === cat.id).reduce((acc, v) => acc + v.totalDue, 0),
+      collected: vendors.filter(v => (v.categoryIds || []).includes(cat.id)).reduce((acc, v) => acc + v.totalPaid, 0),
+      expected: vendors.filter(v => (v.categoryIds || []).includes(cat.id)).reduce((acc, v) => acc + v.totalDue, 0),
     })).filter(c => c.expected > 0);
 
     const statusData = [
@@ -277,27 +294,31 @@ export default function App() {
     }
   };
 
-  const addVendor = async (name: string, categoryId: string, phone: string = '', photo: string = '') => {
+  const addVendor = async (name: string, proprietor: string = '', categoryIds: string[], phone: string = '', photo: string = '') => {
     if (!profile || profile.role !== 'admin') return;
-    const cat = categories.find(c => c.id === categoryId);
-    if (!cat) return;
+    const selectedCats = categories.filter(c => categoryIds.includes(c.id));
+    if (selectedCats.length === 0) return;
+
+    const totalDue = selectedCats.reduce((acc, c) => acc + c.defaultPrice, 0);
+    const categoryNames = selectedCats.map(c => c.name);
 
     try {
       await addDoc(collection(db, 'vendors'), {
         name,
-        categoryId,
-        categoryName: cat.name,
-        totalDue: cat.defaultPrice,
+        proprietor,
+        categoryIds,
+        categoryNames,
+        totalDue,
         totalPaid: 0,
         status: 'Not Paid',
         phone,
         photo,
         qrCode: `V-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
       });
-      alert('Vendor added!');
+      addToast('Establishment successfully enrolled in registry.', 'success');
     } catch (err) {
       console.error(err);
-      alert('Failed to add vendor');
+      addToast('Failed to enroll establishment.', 'error');
     }
   };
 
@@ -450,7 +471,7 @@ export default function App() {
     doc.setFontSize(7);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
-    const businessType = type === 'vendor' ? (item as Vendor).categoryName : `${(item as Worker).vendorName}'s Helper`;
+    const businessType = type === 'vendor' ? ((item as Vendor).categoryNames || []).join(', ') : `${(item as Worker).vendorName}'s Helper`;
     doc.text(businessType.toUpperCase(), 27, 84, { align: 'center' });
 
     // Footer Security Code
@@ -513,6 +534,151 @@ export default function App() {
     doc.text('VALID FOR 2026 BATCH A ORIENTATION', 27, 84.5, { align: 'center' });
 
     doc.save(`${type}-ID-${item.name.replace(/\s+/g, '_')}.pdf`);
+  };
+
+  const generateBulkIDs = async (items: (Vendor | Worker)[], type: 'vendor' | 'worker') => {
+    if (items.length === 0) return;
+    
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: [54, 85.6]
+    });
+
+    const primaryColor = [112, 14, 82]; // NYSC Maroon
+    const textColor = [20, 20, 20];
+
+    // Helper for watermark
+    const addWatermark = (p: jsPDF) => {
+      p.setTextColor(245, 245, 245);
+      p.setFontSize(5);
+      p.setFont("helvetica", "bold");
+      for (let i = 0; i < 10; i++) {
+        for (let j = 0; j < 15; j++) {
+          p.text('NYSC', i * 10 - 5, j * 10, { angle: 45 });
+        }
+      }
+    };
+
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+      if (index > 0) doc.addPage([54, 85.6], 'p');
+
+      // --- FRONT SIDE ---
+      addWatermark(doc);
+      
+      // Header Decoration
+      doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.triangle(0, 0, 20, 0, 0, 15, 'F');
+      doc.triangle(54, 0, 34, 0, 54, 15, 'F');
+      doc.rect(15, 0, 24, 5, 'F');
+
+      // Refined Logo Area
+      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setLineWidth(0.3);
+      doc.circle(27, 10, 7, 'S');
+      doc.setFillColor(255, 255, 255);
+      doc.circle(27, 10, 6.5, 'F');
+      
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setFontSize(3.5);
+      doc.setFont("helvetica", "bold");
+      doc.text('NATIONAL', 27, 8.5, { align: 'center' });
+      doc.text('YOUTH SERVICE', 27, 10.5, { align: 'center' });
+      doc.text('CORPS', 27, 12.5, { align: 'center' });
+
+      // Official Identity Text
+      doc.setFontSize(7);
+      doc.text('Identity', 8, 12);
+      doc.setFontSize(10);
+      doc.text('CARD', 8, 16);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+      const cardTitle = type === 'vendor' ? 'CAMP MARKET PARTICIPANT' : 'HELPER ID CARD';
+      const splitTitle = doc.splitTextToSize(cardTitle, 45);
+      doc.text(splitTitle, 27, 26, { align: 'center' });
+
+      // Photo
+      const photoX = 27;
+      const photoY = 48;
+      const photoR = 15;
+      doc.setDrawColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setLineWidth(1.5);
+      doc.circle(photoX, photoY, photoR, 'S');
+      
+      if (item.photo) {
+        try {
+          doc.addImage(item.photo, 'JPEG', photoX - 11, photoY - 11, 22, 22);
+        } catch (e) {}
+      }
+
+      // Name
+      doc.setFontSize(7);
+      doc.setTextColor(120, 120, 120);
+      doc.text('FULL NAME', 27, 68, { align: 'center' });
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+      doc.text(doc.splitTextToSize(item.name.toUpperCase(), 40), 27, 72, { align: 'center' });
+
+      // Trade
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(120, 120, 120);
+      doc.text('TYPES OF BUSINESS / TRADE', 27, 80, { align: 'center' });
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      const biz = type === 'vendor' ? ((item as Vendor).categoryNames || []).join(', ') : `${(item as Worker).vendorName}'s Helper`;
+      doc.text(doc.splitTextToSize(biz.toUpperCase(), 42), 27, 84, { align: 'center' });
+
+      doc.setFontSize(6);
+      doc.setTextColor(150, 150, 150);
+      doc.text(`REG. CODE: ${item.qrCode || 'N/A'}`, 27, 92, { align: 'center' });
+      doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.rect(5, 94, 44, 1.5, 'F');
+
+      // --- BACK SIDE ---
+      doc.addPage([54, 85.6], 'p');
+      addWatermark(doc);
+      doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.rect(0, 0, 54, 3, 'F');
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "bold");
+      doc.text('OFFICIAL VERIFICATION', 27, 10, { align: 'center' });
+
+      if (item.qrCode) {
+        const verifyUrl = `${window.location.origin}?verify=${item.qrCode}`;
+        const qrDataUrl = await QRCode.toDataURL(verifyUrl);
+        doc.setDrawColor(240, 240, 240);
+        doc.setLineWidth(0.5);
+        doc.rect(12, 15, 30, 30, 'S');
+        doc.addImage(qrDataUrl, 'PNG', 13, 16, 28, 28);
+        doc.setFontSize(5);
+        doc.text('SCAN QR TO VALIDATE STATUS', 27, 46, { align: 'center' });
+      }
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6);
+      doc.setTextColor(80, 80, 80);
+      const notice = "This card remains the property of National Youth Service Corps. Unauthorized usage is strictly prohibited. If found, please return to the Nearest NYSC State Secretariat or Camp Office.";
+      doc.text(doc.splitTextToSize(notice, 44), 27, 54, { align: 'center' });
+      doc.setDrawColor(200, 200, 200);
+      doc.line(15, 74, 39, 74);
+      doc.setFontSize(5);
+      doc.text('HEAD OF CAMP MARKET', 27, 77, { align: 'center' });
+      doc.setFont("helvetica", "bold");
+      doc.text('AUTHORIZED SIGNATORY', 27, 80, { align: 'center' });
+      doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.rect(0, 82, 54, 3.6, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(6);
+      doc.text('VALID FOR 2026 BATCH A ORIENTATION', 27, 84.5, { align: 'center' });
+    }
+
+    doc.save(`Bulk-${type}-IDs-${format(new Date(), 'yyyy-MM-dd-HHmm')}.pdf`);
   };
 
   const printVendorQR = async (vendor: Vendor) => {
@@ -581,7 +747,7 @@ export default function App() {
     
     const vendorData = vendors.map(v => [
       v.name,
-      v.categoryName,
+      (v.categoryNames || []).join(', '),
       `NGN ${v.totalDue.toLocaleString()}`,
       `NGN ${v.totalPaid.toLocaleString()}`,
       v.status.toUpperCase()
@@ -805,10 +971,12 @@ export default function App() {
                   onAddVendor={addVendor}
                   onPrintID={generateIDCard}
                   onPrintQR={printVendorQR}
+                  onPrintBulk={generateBulkIDs}
                   workers={workers}
                   onAddWorker={addWorker}
                   onDeleteWorker={deleteWorker}
                   onUpdatePhoto={updateVendorPhoto}
+                  addToast={addToast}
                 />
               )}
               {activeView === 'payments' && <PaymentsView payments={payments} onPrint={generatePDF} />}
@@ -818,9 +986,11 @@ export default function App() {
                   workers={workers} 
                   vendors={vendors}
                   onAddWorker={addWorker} 
-                  onPrintID={generateIDCard} 
+                  onPrintID={generateIDCard}
+                  onPrintBulk={generateBulkIDs}
                   onDelete={deleteWorker} 
                   onUpdatePhoto={updateWorkerPhoto}
+                  addToast={addToast}
                 />
               )}
               {activeView === 'admin' && <AdminView categories={categories} profile={profile} />}
@@ -860,6 +1030,35 @@ export default function App() {
           </motion.nav>
         </div>
       )}
+
+      {/* Global Toaster */}
+      <div className="fixed top-8 right-8 z-[100] flex flex-col gap-3">
+        <AnimatePresence>
+          {toasts.map(toast => (
+            <motion.div
+              key={toast.id}
+              initial={{ x: 100, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 100, opacity: 0 }}
+              className={cn(
+                "px-6 py-4 rounded-2xl shadow-xl flex items-center gap-4 border border-white/10 backdrop-blur-md min-w-[300px]",
+                toast.type === 'success' ? "bg-emerald-900 text-emerald-50 border-emerald-800" : "bg-red-900 text-red-50 border-red-800"
+              )}
+            >
+              <div className={cn(
+                "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 shadow-lg",
+                toast.type === 'success' ? "bg-emerald-600" : "bg-red-600"
+              )}>
+                {toast.type === 'success' ? <ShieldCheck className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+              </div>
+              <div>
+                <p className="text-xs font-bold leading-tight">{toast.message}</p>
+                <p className="text-[10px] opacity-60 mt-0.5">System Alert • Just Now</p>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
@@ -869,8 +1068,8 @@ export default function App() {
 function VendorDetailsModal({ vendor, categories, workers, onClose, onPrintQR, onAddWorker, onPrintID, onDeleteWorker, onUpdatePhoto }: any) {
   const [isAddingStaff, setIsAddingStaff] = useState(false);
   
-  const category = categories.find((c: any) => c.id === vendor.categoryId);
-  const maxHelpers = category?.maxHelpers || 1;
+  const selectedCats = categories.filter((c: any) => (vendor.categoryIds || []).includes(c.id));
+  const maxHelpers = selectedCats.length > 0 ? Math.max(...selectedCats.map((c: any) => c.maxHelpers || 1)) : 1;
   const limitReached = workers.length >= maxHelpers;
 
   const handlePhotoUpdate = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -904,7 +1103,8 @@ function VendorDetailsModal({ vendor, categories, workers, onClose, onPrintQR, o
             </label>
           </div>
           <h3 className="text-lg font-black text-center text-gray-900 leading-tight mb-1">{vendor.name}</h3>
-          <p className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-wider mb-6">{vendor.categoryName}</p>
+          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest text-center mb-1">{vendor.proprietor || 'Unregistered Proprietor'}</div>
+          <p className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-wider mb-6">{(vendor.categoryNames || []).join(', ')}</p>
           
           <div className="w-full space-y-4 pt-6 border-t border-gray-200 text-center">
             <div>
@@ -1169,86 +1369,178 @@ function VerifyView({ vendors, workers }: { vendors: Vendor[], workers: Worker[]
       </AnimatePresence>
     </div>
   );
-}function WorkersView({ workers, vendors, onAddWorker, onPrintID, onDelete, onUpdatePhoto }: any) {
+}function WorkersView({ workers, vendors, onAddWorker, onPrintID, onPrintBulk, profile, onDelete, onUpdatePhoto, addToast }: any) {
   const [isAdding, setIsAdding] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  
+  const activeWorkers = workers.filter((w: any) => !w.deleted);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === activeWorkers.length) setSelectedIds([]);
+    else setSelectedIds(activeWorkers.map((w: Worker) => w.id));
+  };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-28">
       <div className="flex justify-between items-center">
-        <h2 className="font-bold text-xl">Helper ID Registry</h2>
+        <h2 className="font-bold text-xl flex items-center gap-2 text-[#0f172a]">
+          Helper ID Registry
+          <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full uppercase tracking-tighter border border-blue-100 italic">Personnel Database</span>
+        </h2>
         <button 
           onClick={() => setIsAdding(true)}
-          className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-gray-800 transition-all font-mono tracking-tighter uppercase"
+          className="flex items-center gap-2 bg-black text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-black/10 hover:bg-gray-800 transition-all active:scale-95 uppercase tracking-widest text-[10px]"
         >
-          <Plus className="w-4 h-4" /> Direct Enrollment
+          <Plus className="w-4 h-4" /> Enroll Personnel
         </button>
       </div>
 
       <div className="list-container shadow-sm overflow-hidden bg-white rounded-2xl border border-gray-100">
-        <div className="list-header grid grid-cols-12 gap-4 px-6 py-4 bg-gray-50 border-b border-gray-100">
-          <div className="col-span-1">Photo</div>
-          <div className="col-span-3">Helper Name</div>
-          <div className="col-span-2">QR Code</div>
-          <div className="col-span-2">Assignment</div>
-          <div className="col-span-2">Contact</div>
+        <div className="list-header grid grid-cols-12 gap-4 px-6 items-center">
+          <div className="col-span-1 flex justify-center">
+            <input 
+               type="checkbox" 
+               checked={activeWorkers.length > 0 && selectedIds.length === activeWorkers.length}
+               onChange={toggleSelectAll}
+               className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+             />
+          </div>
+          <div className="col-span-3 px-2">Operator Identity</div>
+          <div className="col-span-2 text-center">Digital Scan</div>
+          <div className="col-span-2 text-center">Linked Entity</div>
+          <div className="col-span-2">Verification</div>
           <div className="col-span-2 text-right">Actions</div>
         </div>
-        <div className="divide-y divide-[#f1f5f9]">
-          {workers.filter((w: any) => !w.deleted).map((w: Worker) => (
-            <div key={w.id} className="grid grid-cols-12 gap-4 items-center px-6 py-4 hover:bg-gray-50 transition-colors">
-              <div className="col-span-1 flex justify-center">
-                <div className="group relative w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden border border-gray-200 cursor-pointer">
+        <div className="divide-y divide-gray-50 bg-white">
+          {activeWorkers.map((w: Worker) => (
+            <div key={w.id} className={cn(
+              "grid grid-cols-12 gap-4 items-center px-6 transition-all group",
+              selectedIds.includes(w.id) ? "bg-emerald-50/40" : "hover:bg-gray-50/50"
+            )}>
+              <div className="col-span-1 flex justify-center items-center gap-4">
+                <input 
+                   type="checkbox" 
+                   checked={selectedIds.includes(w.id)}
+                   onChange={() => toggleSelect(w.id)}
+                   className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                 />
+                <div className="group/photo relative w-12 h-12 rounded-2xl bg-gray-50 flex-shrink-0 overflow-hidden border-2 border-white ring-1 ring-gray-100 shadow-sm">
                   {w.photo ? (
-                    <img src={w.photo} className="w-full h-full object-cover group-hover:blur-[1px]" />
+                    <img src={w.photo} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-300 font-bold text-xs"><Camera className="w-4 h-4" /></div>
                   )}
-                  <label className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-all cursor-pointer">
-                    <Camera className="text-white w-3.5 h-3.5" />
+                  <label className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover/photo:opacity-100 transition-all cursor-pointer">
+                    <Camera className="text-white w-4 h-4" />
                     <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (file) {
                         const reader = new FileReader();
-                        reader.onloadend = () => onUpdatePhoto(w.id, reader.result as string);
+                        reader.onloadend = () => {
+                          onUpdatePhoto(w.id, reader.result as string);
+                          addToast('Personnel portrait captured successfully.', 'success');
+                        };
                         reader.readAsDataURL(file);
                       }
                     }} />
                   </label>
                 </div>
               </div>
-              <div className="col-span-3 font-bold text-[#0f172a]">
-                {w.name}
-                {w.vendorName && <div className="text-[10px] text-emerald-600 font-bold uppercase tracking-tight truncate">Vendor: {w.vendorName}</div>}
+              <div className="col-span-3">
+                <div className="font-black text-[#0f172a] truncate text-sm leading-tight uppercase tracking-tight group-hover:text-emerald-700 transition-colors">{w.name}</div>
+                <div className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter mt-0.5">REF: {w.id.substring(0,8)}</div>
+              </div>
+              <div className="col-span-2 flex justify-center">
+                 <div className="p-1.5 bg-white border border-gray-100 rounded-lg shadow-sm">
+                    <QRCodeSVG value={w.id} size={32} className="opacity-80 group-hover:opacity-100 transition-opacity" />
+                 </div>
+              </div>
+              <div className="col-span-2 text-center px-4">
+                <div className="text-[10px] font-black text-gray-800 uppercase truncate">
+                  {vendors.find((v: any) => v.id === w.vendorId)?.name || w.vendorName || 'UNASSIGNED'}
+                </div>
+                <div className="text-[9px] text-gray-400 font-black uppercase tracking-widest mt-0.5 leading-none">Primary Authority</div>
               </div>
               <div className="col-span-2">
-                <div className="flex items-center gap-2">
-                  <div className="bg-gray-100 p-1 rounded">
-                    <QRCodeSVG value={w.qrCode || w.id} size={20} />
-                  </div>
-                  <span className="text-[10px] font-mono font-bold text-gray-400">{w.qrCode}</span>
+                <div className="text-[11px] font-black text-gray-600 font-mono italic underline decoration-emerald-200 underline-offset-2">{w.phone || 'NO CONTACT'}</div>
+                <div className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-emerald-600 mt-1">
+                   <Clock size={10} className="animate-pulse" /> Active Duty
                 </div>
               </div>
-              <div className="col-span-2">
-                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md uppercase tracking-wider">
-                  {w.role}
-                </span>
-              </div>
-              <div className="col-span-2 text-xs font-mono text-gray-500">{w.phone || 'N/A'}</div>
-              <div className="col-span-2 text-right flex items-center justify-end gap-3">
-                <button onClick={() => onPrintID(w, 'worker')} className="p-2 text-gray-400 hover:text-emerald-500 transition-colors" title="Print ID Card">
-                  <IdCard className="w-4 h-4" />
+              <div className="col-span-2 flex items-center justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                <button onClick={() => onPrintID(w, 'worker')} className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Issue ID Token">
+                  <IdCard size={18} />
                 </button>
-                <button onClick={() => onDelete(w.id)} className="p-2 text-gray-400 hover:text-red-500 transition-colors" title="Delete">
-                  <Trash2 className="w-4 h-4" />
+                <button onClick={() => onDelete(w.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all" title="Revoke Authorization">
+                  <Trash2 size={18} />
                 </button>
               </div>
             </div>
           ))}
-          {workers.length === 0 && (
-            <div className="p-12 text-center text-gray-400 text-sm italic">No helpers registered yet.</div>
+          {activeWorkers.length === 0 && (
+            <div className="py-32 text-center flex flex-col items-center">
+               <div className="w-24 h-24 bg-gray-50 border-4 border-white shadow-xl rounded-[2.5rem] flex items-center justify-center mb-6 text-gray-200">
+                  <IdCard size={48} />
+               </div>
+               <h4 className="text-xl font-black text-gray-900 mb-2 italic tracking-tight">Helper Database Inactive</h4>
+               <p className="text-sm text-gray-400 max-w-xs mb-8 font-medium">Capture biometric data and enroll establishment personnel to activate identity printing.</p>
+               <button onClick={() => setIsAdding(true)} className="px-10 py-4 bg-[#0f172a] text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl hover:bg-black transition-all active:scale-95">Enroll Staff</button>
+            </div>
           )}
         </div>
       </div>
+
+      {/* Action Console */}
+      <AnimatePresence>
+        {selectedIds.length > 0 && adminRole(profile) && (
+          <motion.div 
+            initial={{ y: 200, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 200, opacity: 0 }}
+            className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[110] bg-[#0f172a] text-white pl-12 pr-6 py-6 rounded-[3rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)] flex items-center gap-12 border border-white/10 backdrop-blur-xl"
+          >
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] leading-none mb-1">Batch Operations</span>
+              <div className="flex items-center gap-3">
+                <div className="flex -space-x-3">
+                   {activeWorkers.filter(w => selectedIds.includes(w.id)).slice(0, 4).map(w => (
+                     <div key={w.id} className="w-10 h-10 rounded-full border-2 border-[#0f172a] bg-gray-800 flex items-center justify-center overflow-hidden ring-1 ring-white/10">
+                        {w.photo ? <img src={w.photo} className="w-full h-full object-cover grayscale" /> : <div className="text-[10px] font-black">ID</div>}
+                     </div>
+                   ))}
+                </div>
+                <span className="text-xl font-black tracking-tighter ml-2">{selectedIds.length} <span className="text-gray-500 uppercase text-[10px] tracking-widest">Personnel Selected</span></span>
+              </div>
+            </div>
+
+            <div className="h-12 w-[1.5px] bg-white/10" />
+
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => {
+                  onPrintBulk(activeWorkers.filter((w: Worker) => selectedIds.includes(w.id)), 'worker');
+                  addToast(`System generating bulk identity PDF for ${selectedIds.length} personnel. Ready shortly.`, 'success');
+                }}
+                className="flex items-center gap-4 bg-emerald-600 hover:bg-emerald-500 text-white px-10 py-4 rounded-[1.5rem] text-[11px] font-black uppercase tracking-[0.1em] transition-all shadow-[0_12px_24px_-8px_rgba(16,185,129,0.5)] active:scale-95"
+              >
+                <Printer size={18} className="animate-pulse" /> Batch Operation
+              </button>
+              
+              <button 
+                onClick={() => setSelectedIds([])}
+                className="w-14 h-14 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 transition-colors border border-white/10 group"
+                title="Reset Selection"
+              >
+                <X size={24} className="text-gray-400 group-hover:text-white transition-colors" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {isAdding && (
         <AddWorkerModal 
@@ -1429,148 +1721,249 @@ function VendorsView({
   searchTerm, 
   setSearchTerm, 
   categoryFilter, 
-  setCategoryFilter,
-  statusFilter,
-  setStatusFilter,
-  onPayment,
-  profile,
-  onAddVendor,
-  onPrintID,
-  onPrintQR,
-  workers,
-  onAddWorker,
-  onDeleteWorker,
-  onUpdatePhoto
+  setCategoryFilter, 
+  statusFilter, 
+  setStatusFilter, 
+  onPayment, 
+  profile, 
+  onAddVendor, 
+  onPrintID, 
+  onPrintQR, 
+  onPrintBulk, 
+  workers, 
+  onAddWorker, 
+  onDeleteWorker, 
+  onUpdatePhoto,
+  addToast
 }: any) {
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
   const [detailVendor, setDetailVendor] = useState<Vendor | null>(null);
   const [amount, setAmount] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [isAddingVendor, setIsAddingVendor] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === vendors.length) setSelectedIds([]);
+    else setSelectedIds(vendors.map((v: Vendor) => v.id));
+  };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-28">
       <div className="flex justify-between items-center">
-        <h2 className="font-bold text-xl">Vendor Management</h2>
+        <h2 className="font-bold text-xl flex items-center gap-2 text-[#0f172a]">
+          Market Registry
+          <span className="text-[10px] font-black bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full uppercase tracking-tighter border border-emerald-100">Live Registry</span>
+        </h2>
         {profile?.role === 'admin' && (
           <button 
             onClick={() => setIsAddingVendor(true)}
-            className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-gray-800 transition-all"
+            className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 transition-all active:scale-95"
           >
-            <Plus className="w-4 h-4" /> Add Vendor
+            <Plus className="w-4 h-4" /> Enroll Establishment
           </button>
         )}
       </div>
 
-      <div className="list-container shadow-sm">
-        {/* Controls */}
-        <div className="p-5 border-b border-[#e2e8f0] flex flex-wrap items-center gap-4">
-          <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#64748b]" />
+      <div className="list-container shadow-sm bg-white overflow-hidden border border-gray-100 rounded-2xl">
+        {/* Advanced Filters */}
+        <div className="p-4 border-b border-gray-50 flex flex-wrap items-center gap-3 bg-gray-50/10">
+          <div className="relative flex-1 min-w-[280px]">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input 
               type="text" 
-              placeholder="Search vendor / establishment..."
-              className="w-full pl-10 pr-4 py-2 bg-[#f8fafc] border border-[#e2e8f0] rounded-lg text-sm focus:ring-2 focus:ring-[#10b981]/20 outline-none"
+              placeholder="Filter by proprietor, ID or trade..."
+              className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all shadow-sm"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
           
-          <select 
-            className="bg-[#f8fafc] text-sm px-4 py-2 border border-[#e2e8f0] rounded-lg focus:ring-2 focus:ring-[#10b981]/20 outline-none text-[#64748b] font-medium"
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-          >
-            <option value="all">All Categories</option>
-            {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+          <div className="flex items-center gap-2">
+             <div className="flex items-center gap-2 px-3 py-2.5 bg-white rounded-xl border border-gray-200">
+                <Filter className="w-3.5 h-3.5 text-gray-400" />
+                <select 
+                  className="text-xs font-bold text-gray-600 outline-none bg-transparent cursor-pointer"
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                >
+                  <option value="all">Trade Category</option>
+                  {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+             </div>
 
-          <select 
-            className="bg-[#f8fafc] text-sm px-4 py-2 border border-[#e2e8f0] rounded-lg focus:ring-2 focus:ring-[#10b981]/20 outline-none text-[#64748b] font-medium"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="all">All Status</option>
-            <option value="Paid">Fully Paid</option>
-            <option value="Partial">Partial</option>
-            <option value="Not Paid">Not Paid</option>
-          </select>
+             <div className="flex items-center gap-2 px-3 py-2.5 bg-white rounded-xl border border-gray-200">
+                <ShieldCheck className="w-3.5 h-3.5 text-gray-400" />
+                <select 
+                  className="text-xs font-bold text-gray-600 outline-none bg-transparent cursor-pointer"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                >
+                  <option value="all">Vetting Status</option>
+                  <option value="Paid">Verified (Paid)</option>
+                  <option value="Partial">Awaiting Balance</option>
+                  <option value="Not Paid">Pending Collection</option>
+                </select>
+             </div>
+          </div>
         </div>
 
-        {/* Table */}
+        {/* Table Body */}
         <div className="overflow-x-auto">
-          <div className="list-header grid grid-cols-12 gap-4">
-            <div className="col-span-4">Vendor / Establishment</div>
-            <div className="col-span-3">Category</div>
-            <div className="col-span-2">Amount Due</div>
+          <div className="list-header grid grid-cols-12 gap-4 px-6 items-center">
+            <div className="col-span-1 flex justify-center">
+               <input 
+                 type="checkbox" 
+                 checked={vendors.length > 0 && selectedIds.length === vendors.length}
+                 onChange={toggleSelectAll}
+                 className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer transition-all"
+               />
+            </div>
+            <div className="col-span-3 px-2">Entity Identity</div>
+            <div className="col-span-3">Assigned Trades</div>
+            <div className="col-span-2 text-center">Collection Matrix</div>
             <div className="col-span-1">Status</div>
-            <div className="col-span-2 text-right">Action</div>
+            <div className="col-span-2 text-right">Actions</div>
           </div>
-          <div className="divide-y divide-[#f1f5f9]">
+          <div className="divide-y divide-gray-50 bg-white">
             {vendors.map((v: Vendor) => (
-              <div key={v.id} className="list-item grid grid-cols-12 gap-4 items-center">
-                <div className="col-span-4 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0 overflow-hidden border border-gray-200">
-                    {v.photo ? <img src={v.photo} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-300 font-bold text-xs">ID</div>}
+              <div key={v.id} className={cn(
+                "list-item grid grid-cols-12 gap-4 items-center px-6 transition-all duration-200 group",
+                selectedIds.includes(v.id) ? "bg-emerald-50/40" : "hover:bg-gray-50/50"
+              )}>
+                <div className="col-span-1 flex justify-center">
+                   <input 
+                     type="checkbox" 
+                     checked={selectedIds.includes(v.id)}
+                     onChange={() => toggleSelect(v.id)}
+                     className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                   />
+                </div>
+                <div className="col-span-3 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm ring-1 ring-gray-100 shrink-0">
+                    {v.photo ? (
+                      <img src={v.photo} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all" />
+                    ) : (
+                      <div className="text-gray-200 font-black text-xs">ID</div>
+                    )}
                   </div>
-                  <div>
-                    <div className="font-bold text-[#0f172a]">{v.name}</div>
-                    {v.phone && <div className="text-[10px] text-[#64748b] font-mono">{v.phone}</div>}
+                  <div className="min-w-0">
+                    <div className="font-black text-[#0f172a] truncate text-sm leading-tight group-hover:text-emerald-700 transition-colors uppercase tracking-tight">{v.name}</div>
+                    <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tight truncate mt-0.5 opacity-80">{v.proprietor || 'Unregistered Proprietor'}</div>
+                    {v.phone && (
+                      <div className="text-[9px] text-gray-400 font-mono flex items-center gap-1 mt-1">
+                        <Phone className="w-2.5 h-2.5" /> {v.phone}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="col-span-3">
-                  <span className="text-xs text-[#64748b] font-medium uppercase tracking-wide">
-                    {v.categoryName}
-                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {(v.categoryNames || []).map((name: string) => (
+                      <span key={name} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-md text-[9px] font-black uppercase tracking-widest border border-gray-200 shadow-[2px_2px_0px_rgba(0,0,0,0.05)]">
+                        {name}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-                <div className="col-span-2 text-sm font-bold text-[#0f172a]">
-                  ₦{v.totalDue.toLocaleString()}
+                <div className="col-span-2 flex flex-col items-center">
+                  <div className="text-[13px] font-black text-[#1e293b]">₦{v.totalDue.toLocaleString()}</div>
+                  <div className="flex items-center gap-1 text-[9px] font-black uppercase text-gray-400">
+                    <TrendingUp className="w-2.5 h-2.5 text-emerald-500" /> ₦{v.totalPaid.toLocaleString()} PAID
+                  </div>
                 </div>
                 <div className="col-span-1">
-                  <span className={cn(
-                    "status-badge",
-                    v.status === 'Paid' ? 'status-paid' : 
-                    v.status === 'Partial' ? 'status-partial' : 'status-not-paid'
+                   <div className={cn(
+                    "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tight",
+                    v.status === 'Paid' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 
+                    v.status === 'Partial' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-red-100 text-red-800 border border-red-200'
                   )}>
-                    {v.status === 'Not Paid' ? 'UNPAID' : v.status.toUpperCase()}
-                  </span>
+                    <div className={cn(
+                      "w-1.5 h-1.5 rounded-full",
+                      v.status === 'Paid' ? "bg-emerald-500" :
+                      v.status === 'Partial' ? "bg-amber-500" : "bg-red-500"
+                    )} />
+                    {v.status === 'Not Paid' ? 'Pending' : v.status}
+                  </div>
                 </div>
-                <div className="col-span-2 text-right flex items-center justify-end gap-2">
-                  <button 
-                    onClick={() => setDetailVendor(v)}
-                    className="p-1 px-2 text-[#64748b] hover:text-[#10b981] transition-colors"
-                    title="Vendor Details & Helpers"
-                  >
-                    <ChevronRight className="w-4 h-4" />
+                <div className="col-span-2 flex items-center justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => setDetailVendor(v)} className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Detailed Audit">
+                    <ChevronRight size={18} />
                   </button>
-                  <button 
-                    onClick={() => onPrintID(v, 'vendor')}
-                    className="p-1 px-2 text-[#64748b] hover:text-[#10b981] transition-colors"
-                    title="Print ID Card"
-                  >
-                    <IdCard className="w-4 h-4" />
+                  <button onClick={() => { setSelectedVendor(v); setAmount(''); setNotes(''); }} disabled={v.status === 'Paid'} className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all disabled:opacity-20" title="Rev. Collection">
+                    <Wallet size={18} />
                   </button>
-                  <button 
-                    onClick={() => { setSelectedVendor(v); setAmount(''); setNotes(''); }}
-                    disabled={v.status === 'Paid'}
-                    className={cn(
-                      "px-3 py-1.5 rounded-md text-xs font-bold transition-all",
-                      v.status === 'Paid' ? 'bg-[#f1f5f9] text-[#cbd5e1] cursor-not-allowed' : 'bg-[#10b981] text-white hover:bg-[#059669]'
-                    )}
-                  >
-                    PAY NOW
+                  <button onClick={() => onPrintID(v, 'vendor')} className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Identity Token">
+                    <IdCard size={18} />
                   </button>
                 </div>
               </div>
             ))}
             {vendors.length === 0 && (
-              <div className="p-12 text-center text-[#64748b] text-sm font-medium">
-                No vendors Registry entries matching your search.
+              <div className="py-32 text-center flex flex-col items-center">
+                 <div className="w-24 h-24 bg-gray-50 border-4 border-white shadow-xl rounded-[2.5rem] flex items-center justify-center mb-6 text-gray-200">
+                    <Users size={48} />
+                 </div>
+                 <h4 className="text-xl font-black text-gray-900 mb-2 italic">Registry is Empty</h4>
+                 <p className="text-sm text-gray-400 max-w-xs mb-8 font-medium">Verify connection to Firestore or manually register the first vendor establishment.</p>
+                 <button onClick={() => setIsAddingVendor(true)} className="px-10 py-4 bg-[#0f172a] text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl hover:bg-black transition-all active:scale-95">Enroll Vendor</button>
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* Action Console */}
+      <AnimatePresence>
+        {selectedIds.length > 0 && adminRole(profile) && (
+          <motion.div 
+            initial={{ y: 200, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 200, opacity: 0 }}
+            className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[110] bg-[#0f172a] text-white pl-12 pr-6 py-6 rounded-[3rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.6)] flex items-center gap-12 border border-white/10 backdrop-blur-xl"
+          >
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] leading-none mb-1">Queue Control</span>
+              <div className="flex items-center gap-3">
+                <div className="flex -space-x-3">
+                   {vendors.filter(v => selectedIds.includes(v.id)).slice(0, 4).map(v => (
+                     <div key={v.id} className="w-10 h-10 rounded-full border-2 border-[#0f172a] bg-gray-800 flex items-center justify-center overflow-hidden ring-1 ring-white/10">
+                        {v.photo ? <img src={v.photo} className="w-full h-full object-cover" /> : <div className="text-[10px] font-black">ID</div>}
+                     </div>
+                   ))}
+                </div>
+                <span className="text-xl font-black tracking-tighter ml-2">{selectedIds.length} <span className="text-gray-500">Selections</span></span>
+              </div>
+            </div>
+
+            <div className="h-12 w-[1.5px] bg-white/10" />
+
+            <div className="flex items-center gap-4">
+              <button 
+                onClick={() => {
+                  onPrintBulk(vendors.filter((v: Vendor) => selectedIds.includes(v.id)), 'vendor');
+                  addToast(`Compiling bulk identity PDF for ${selectedIds.length} entities. Ready shortly.`, 'success');
+                }}
+                className="flex items-center gap-4 bg-emerald-600 hover:bg-emerald-500 text-white px-10 py-4 rounded-[1.5rem] text-[11px] font-black uppercase tracking-[0.1em] transition-all shadow-[0_12px_24px_-8px_rgba(16,185,129,0.5)] active:scale-95"
+              >
+                <Printer size={18} className="animate-pulse" /> Batch Operation
+              </button>
+              
+              <button 
+                onClick={() => setSelectedIds([])}
+                className="w-14 h-14 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 transition-colors border border-white/10 group"
+                title="Reset Selection"
+              >
+                <X size={24} className="text-gray-400 group-hover:text-white transition-colors" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Payment Modal */}
       {selectedVendor && (
@@ -1641,8 +2034,8 @@ function VendorsView({
         <AddVendorModal 
           categories={categories} 
           onClose={() => setIsAddingVendor(false)} 
-          onSubmit={(name: string, catId: string, phone: string, photo: string) => {
-            onAddVendor(name, catId, phone, photo);
+          onSubmit={(name: string, proprietor: string, catId: string, phone: string, photo: string) => {
+            onAddVendor(name, proprietor, catId, phone, photo);
             setIsAddingVendor(false);
           }} 
         />
@@ -1667,9 +2060,10 @@ function VendorsView({
 
 function AddVendorModal({ categories, onClose, onSubmit }: any) {
   const [name, setName] = useState('');
+  const [proprietor, setProprietor] = useState('');
   const [phone, setPhone] = useState('');
   const [photo, setPhoto] = useState('');
-  const [catId, setCatId] = useState(categories[0]?.id || '');
+  const [selectedCatIds, setSelectedCatIds] = useState<string[]>([]);
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1682,12 +2076,19 @@ function AddVendorModal({ categories, onClose, onSubmit }: any) {
     }
   };
 
-  // Reset catId if categories load and it's currently empty
-  useEffect(() => {
-    if (!catId && categories.length > 0) {
-      setCatId(categories[0].id);
+  const handleFormSubmit = () => {
+    if (!name || selectedCatIds.length === 0) {
+      alert('Please enter establishment name and select at least one trade');
+      return;
     }
-  }, [categories, catId]);
+    onSubmit(name, proprietor, selectedCatIds, phone, photo);
+  };
+
+  const calculatedTotal = useMemo(() => {
+    return categories
+      .filter((c: Category) => selectedCatIds.includes(c.id))
+      .reduce((acc: number, c: Category) => acc + c.defaultPrice, 0);
+  }, [categories, selectedCatIds]);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-6">
@@ -1718,17 +2119,27 @@ function AddVendorModal({ categories, onClose, onSubmit }: any) {
             <p className="text-[10px] text-gray-400 font-medium">Automatic unique QR Identification will be generated.</p>
           </div>
           <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Vendor Name</label>
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Establishment Name</label>
             <input 
               type="text" 
               className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm border-none focus:ring-2 focus:ring-orange-500/20 outline-none"
-              placeholder="Enter name..."
+              placeholder="e.g. Mama Martha's Kitchen"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
           <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Phone Number (Optional)</label>
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Proprietor Name</label>
+            <input 
+              type="text" 
+              className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm border-none focus:ring-2 focus:ring-orange-500/20 outline-none"
+              placeholder="Name of person in charge"
+              value={proprietor}
+              onChange={(e) => setProprietor(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Contact Link (Optional)</label>
             <input 
               type="tel" 
               className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm border-none focus:ring-2 focus:ring-orange-500/20 outline-none"
@@ -1737,27 +2148,45 @@ function AddVendorModal({ categories, onClose, onSubmit }: any) {
               onChange={(e) => setPhone(e.target.value)}
             />
           </div>
-          <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Category</label>
-            <select 
-              className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm border-none focus:ring-2 focus:ring-orange-500/20 outline-none"
-              value={catId}
-              onChange={(e) => setCatId(e.target.value)}
-            >
-              {categories.length === 0 && <option value="">No categories available (Seed database)</option>}
-              {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name} - ₦{c.defaultPrice.toLocaleString()}</option>)}
-            </select>
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Trades / Categories (Select all that apply)</label>
+            <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto p-3 bg-gray-50 rounded-2xl border border-gray-100 shadow-inner">
+              {categories.length === 0 && <p className="text-[10px] text-gray-400 text-center py-4">No categories available. Please seed database.</p>}
+              {categories.map((c: any) => (
+                <label key={c.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-xl cursor-pointer transition-all border border-transparent hover:shadow-sm">
+                  <input 
+                    type="checkbox" 
+                    checked={selectedCatIds.includes(c.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) setSelectedCatIds([...selectedCatIds, c.id]);
+                      else setSelectedCatIds(selectedCatIds.filter(id => id !== c.id));
+                    }}
+                    className="w-4 h-4 rounded-lg border-gray-300 text-orange-500 focus:ring-orange-500 transition-all"
+                  />
+                  <div className="flex flex-col">
+                    <span className="text-xs font-bold text-gray-700">{c.name}</span>
+                    <span className="text-[9px] font-mono text-gray-400">₦{c.defaultPrice.toLocaleString()}</span>
+                  </div>
+                </label>
+              ))}
+            </div>
+            {selectedCatIds.length > 0 && (
+              <div className="mt-2 flex items-center justify-between p-3 bg-orange-50 rounded-xl border border-orange-100">
+                <span className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">Calculated Total Due</span>
+                <span className="text-sm font-black text-orange-700">₦{calculatedTotal.toLocaleString()}</span>
+              </div>
+            )}
           </div>
         </div>
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 pt-4">
           <button 
-            disabled={!name || !catId}
-            onClick={() => onSubmit(name, catId, phone, photo)}
-            className="w-full py-4 bg-black text-white rounded-2xl font-bold shadow-lg hover:bg-gray-800 disabled:opacity-50 transition-all text-sm"
+            disabled={!name || selectedCatIds.length === 0}
+            onClick={handleFormSubmit}
+            className="w-full py-4 bg-[#0f172a] text-white rounded-2xl font-bold shadow-lg hover:bg-black disabled:opacity-50 transition-all text-sm uppercase tracking-widest"
           >
-            Create Vendor
+            Create Multi-Trade ID
           </button>
-          <button onClick={onClose} className="w-full py-2 text-xs text-gray-400 font-medium">Cancel</button>
+          <button onClick={onClose} className="w-full py-2 text-xs text-gray-400 font-medium">Cancel Enrollment</button>
         </div>
       </motion.div>
     </div>
@@ -1883,6 +2312,8 @@ function AdminView({ categories, profile }: { categories: Category[], profile: U
 
 // --- Atomic UI Helpers ---
 
+const adminRole = (p: any) => p?.role === 'admin';
+
 function NavItem({ active, icon, label, onClick }: any) {
   return (
     <button 
@@ -1899,29 +2330,81 @@ function NavItem({ active, icon, label, onClick }: any) {
 }
 
 function StatCard({ label, value, trend, type }: any) {
-  const getColors = () => {
+  const getStyles = () => {
     switch(type) {
-      case 'collected': return { color: '#059669', trendColor: '#059669' };
-      case 'outstanding': return { color: '#ef4444', trendColor: '#ef4444' };
-      case 'rate': return { color: '#10b981', trendColor: '#10b981' };
-      default: return { color: '#0f172a', trendColor: '#64748b' };
+      case 'collected': return { 
+        textColor: 'text-emerald-700', 
+        bgColor: 'bg-emerald-50', 
+        borderColor: 'border-emerald-100',
+        icon: <TrendingUp className="w-4 h-4 text-emerald-500" />
+      };
+      case 'outstanding': return { 
+        textColor: 'text-red-700', 
+        bgColor: 'bg-red-50', 
+        borderColor: 'border-red-100',
+        icon: <TrendingDown className="w-4 h-4 text-red-500" />
+      };
+      case 'rate': return { 
+        textColor: 'text-blue-700', 
+        bgColor: 'bg-blue-50', 
+        borderColor: 'border-blue-100',
+        icon: <BarChart2 className="w-4 h-4 text-blue-500" />
+      };
+      default: return { 
+        textColor: 'text-[#0f172a]', 
+        bgColor: 'bg-gray-50', 
+        borderColor: 'border-gray-100',
+        icon: <DollarSign className="w-4 h-4 text-gray-400" />
+      };
     }
   };
   
-  const { color, trendColor } = getColors();
-  const displayValue = typeof value === 'number' ? `₦${value.toLocaleString()}` : value;
+  const styles = getStyles();
+  const isRate = type === 'rate';
+  const numericValue = typeof value === 'number' ? value : parseFloat(value.toString().replace(/[^0-9.]/g, ''));
 
   return (
-    <div className="stat-card">
-      <span className="text-[13px] font-bold text-[#64748b] uppercase tracking-tight">{label}</span>
-      <span style={{ color }} className="text-[24px] font-extrabold tracking-tight">
-        {type !== 'rate' && <span className="text-[0.8em] mr-1 text-[#64748b] font-normal">₦</span>}
-        {typeof value === 'number' ? value.toLocaleString() : value.replace('₦', '')}
-      </span>
-      {trend && <span style={{ color: trendColor }} className="text-[11px] font-medium">{trend}</span>}
-      {type === 'rate' && (
-        <div className="w-full h-[6px] bg-[#e2e8f0] rounded-full mt-1 overflow-hidden">
-          <div style={{ width: value, backgroundColor: '#10b981' }} className="h-full rounded-full transition-all duration-500"></div>
+    <div className={cn(
+      "relative p-6 rounded-[2rem] border transition-all hover:shadow-xl hover:-translate-y-1 overflow-hidden group",
+      styles.bgColor,
+      styles.borderColor
+    )}>
+      <div className="absolute -top-4 -right-4 w-24 h-24 bg-white/50 rounded-full blur-2xl group-hover:scale-150 transition-transform" />
+      
+      <div className="flex justify-between items-start mb-4">
+        <span className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">{label}</span>
+        <div className="p-2 bg-white rounded-xl shadow-sm border border-gray-50">
+          {styles.icon}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <div className={cn("text-2xl font-black tracking-tighter flex items-baseline gap-1", styles.textColor)}>
+          {!isRate && <span className="text-[0.6em] text-gray-400 font-bold opacity-50 uppercase tracking-tighter">₦</span>}
+          {typeof value === 'number' ? value.toLocaleString() : value.replace('₦', '')}
+        </div>
+        
+        {trend && (
+          <div className="flex items-center gap-1.5">
+             <span className="text-[10px] font-black text-gray-400 uppercase italic tracking-tighter">{trend}</span>
+          </div>
+        )}
+      </div>
+
+      {isRate && (
+        <div className="mt-6">
+          <div className="flex justify-between text-[9px] font-black uppercase text-gray-400 mb-1.5 tracking-widest">
+            <span>Progressive Yield</span>
+            <span>{value}</span>
+          </div>
+          <div className="w-full h-2 bg-white/50 rounded-full overflow-hidden border border-white/20">
+            <motion.div 
+              initial={{ width: 0 }}
+              animate={{ width: value }}
+              transition={{ duration: 1, ease: "easeOut" }}
+              className="h-full bg-blue-500 rounded-full"
+            />
+          </div>
         </div>
       )}
     </div>

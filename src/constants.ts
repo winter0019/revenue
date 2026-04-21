@@ -7,7 +7,7 @@ export const INITIAL_CATEGORIES: Omit<Category, 'id'>[] = [
   { name: 'Fast Food', defaultPrice: 25000, color: 'blue', maxHelpers: 4 },
   { name: 'Provision', defaultPrice: 40000, color: 'purple', maxHelpers: 4 },
   { name: 'Charging Spot', defaultPrice: 25000, color: 'amber', maxHelpers: 2 },
-  { name: 'Drinks', defaultPrice: 0, color: 'sky', maxHelpers: 3 },
+  { name: 'Drinks', defaultPrice: 10000, color: 'sky', maxHelpers: 3 },
   { name: 'Clothing', defaultPrice: 15000, color: 'indigo', maxHelpers: 1 },
   { name: 'Saloon', defaultPrice: 15000, color: 'rose', maxHelpers: 2 },
   { name: 'Barbing', defaultPrice: 15000, color: 'red', maxHelpers: 2 },
@@ -21,7 +21,8 @@ export const INITIAL_CATEGORIES: Omit<Category, 'id'>[] = [
   { name: 'Meat Pie (Earpie)', defaultPrice: 5000, color: 'orange', maxHelpers: 1 },
   { name: 'Photographers', defaultPrice: 20000, color: 'violet', maxHelpers: 1 },
   { name: 'Tailors', defaultPrice: 25000, color: 'fuchsia', maxHelpers: 1 },
-  { name: 'Fruit Seller', defaultPrice: 10000, color: 'green', maxHelpers: 1 }
+  { name: 'Fruit Seller', defaultPrice: 10000, color: 'green', maxHelpers: 1 },
+  { name: 'Snacks', defaultPrice: 10000, color: 'amber', maxHelpers: 2 }
 ];
 
 export const VENDOR_MAP: Record<string, string[]> = {
