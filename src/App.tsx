@@ -1757,164 +1757,123 @@ function VendorsView({
       <div className="flex justify-between items-center">
         <h2 className="font-bold text-xl flex items-center gap-2 text-[#0f172a]">
           Market Registry
-          <span className="text-[10px] font-black bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full uppercase tracking-tighter border border-emerald-100">Live Registry</span>
+          <span className="text-[10px] font-black bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full uppercase tracking-tighter border border-emerald-100 italic">Live Registry</span>
         </h2>
         {profile?.role === 'admin' && (
           <button 
             onClick={() => setIsAddingVendor(true)}
-            className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/20 hover:bg-emerald-700 transition-all active:scale-95"
+            className="flex items-center gap-2 bg-[#10b981] text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-emerald-500/20 hover:bg-[#059669] transition-all active:scale-95 uppercase tracking-widest text-[10px]"
           >
-            <Plus className="w-4 h-4" /> Enroll Establishment
+            <Plus className="w-4 h-4" /> Enroll establishment
           </button>
         )}
       </div>
 
-      <div className="list-container shadow-sm bg-white overflow-hidden border border-gray-100 rounded-2xl">
-        {/* Advanced Filters */}
-        <div className="p-4 border-b border-gray-50 flex flex-wrap items-center gap-3 bg-gray-50/10">
-          <div className="relative flex-1 min-w-[280px]">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input 
-              type="text" 
-              placeholder="Filter by proprietor, ID or trade..."
-              className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all shadow-sm"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          
-          <div className="flex items-center gap-2">
-             <div className="flex items-center gap-2 px-3 py-2.5 bg-white rounded-xl border border-gray-200">
-                <Filter className="w-3.5 h-3.5 text-gray-400" />
-                <select 
-                  className="text-xs font-bold text-gray-600 outline-none bg-transparent cursor-pointer"
-                  value={categoryFilter}
-                  onChange={(e) => setCategoryFilter(e.target.value)}
-                >
-                  <option value="all">Trade Category</option>
-                  {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-             </div>
-
-             <div className="flex items-center gap-2 px-3 py-2.5 bg-white rounded-xl border border-gray-200">
-                <ShieldCheck className="w-3.5 h-3.5 text-gray-400" />
-                <select 
-                  className="text-xs font-bold text-gray-600 outline-none bg-transparent cursor-pointer"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                >
-                  <option value="all">Vetting Status</option>
-                  <option value="Paid">Verified (Paid)</option>
-                  <option value="Partial">Awaiting Balance</option>
-                  <option value="Not Paid">Pending Collection</option>
-                </select>
-             </div>
-          </div>
+      {/* Advanced Filters */}
+      <div className="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[280px]">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input 
+            type="text" 
+            placeholder="Filter by proprietor, ID or trade..."
+            className="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl text-sm focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
+        
+        <div className="flex items-center gap-2">
+           <div className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 rounded-xl border-none">
+              <Filter className="w-3.5 h-3.5 text-gray-400" />
+              <select 
+                className="text-xs font-bold text-gray-600 outline-none bg-transparent cursor-pointer"
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+              >
+                <option value="all">Trade Category</option>
+                {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+           </div>
 
-        {/* Table Body */}
-        <div className="overflow-x-auto">
-          <div className="list-header grid grid-cols-12 gap-4 px-6 items-center">
-            <div className="col-span-1 flex justify-center">
-               <input 
-                 type="checkbox" 
-                 checked={vendors.length > 0 && selectedIds.length === vendors.length}
-                 onChange={toggleSelectAll}
-                 className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer transition-all"
-               />
+           <div className="flex items-center gap-2 px-3 py-2.5 bg-gray-50 rounded-xl border-none">
+              <ShieldCheck className="w-3.5 h-3.5 text-gray-400" />
+              <select 
+                className="text-xs font-bold text-gray-600 outline-none bg-transparent cursor-pointer"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="all">Vetting Status</option>
+                <option value="Paid">Verified (Paid)</option>
+                <option value="Partial">Awaiting Balance</option>
+                <option value="Not Paid">Pending Collection</option>
+              </select>
+           </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-6">
+        {vendors.map((v: Vendor) => (
+          <div key={v.id} className="bg-white rounded-3xl border border-gray-100 shadow-[0_4px_12px_-4px_rgba(0,0,0,0.05)] overflow-hidden transition-all hover:shadow-xl hover:-translate-y-0.5 group">
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="w-14 h-14 bg-gray-100/50 rounded-xl flex items-center justify-center font-bold text-gray-300 text-[10px] border border-gray-200 shrink-0">
+                  ID
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-extrabold text-[#0f172a] text-xl leading-none mb-2 uppercase tracking-tight truncate">{v.name}</div>
+                  <div className="text-[11px] font-black text-gray-400 uppercase tracking-[0.1em] mb-2">{(v.categoryNames || []).join(' / ')}</div>
+                  <div className="text-[20px] font-black text-[#0f172a] tracking-tighter flex items-center gap-1">
+                    <span className="text-[0.6em] text-gray-400 font-bold opacity-50 uppercase tracking-tighter">₦</span>
+                    {v.totalDue.toLocaleString()}
+                  </div>
+                  
+                  {v.proprietor && (
+                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-2">Proprietor: {v.proprietor}</div>
+                  )}
+
+                  <div className="mt-4">
+                     <span className={cn(
+                       "inline-flex px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-widest",
+                       v.status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-[#fee2e2] text-[#ef4444]'
+                     )}>
+                        {v.status === 'Paid' ? 'Paid' : 'Unpaid'}
+                     </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Bar */}
+              <div className="mt-6 pt-6 border-t border-gray-50 flex items-center justify-end gap-8">
+                 <button onClick={() => setDetailVendor(v)} className="p-2 text-gray-400 hover:text-emerald-600 transition-colors">
+                    <ChevronRight size={24} />
+                 </button>
+                 
+                 <button onClick={() => onPrintID(v, 'vendor')} className="p-2 text-gray-400 hover:text-emerald-600 transition-colors">
+                    <IdCard size={24} />
+                 </button>
+
+                 <button 
+                  onClick={() => { setSelectedVendor(v); setAmount(''); setNotes(''); }} 
+                  disabled={v.status === 'Paid'}
+                  className="bg-[#10b981] hover:bg-[#059669] disabled:opacity-20 text-white px-8 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+                 >
+                   Pay Now
+                 </button>
+              </div>
             </div>
-            <div className="col-span-3 px-2">Entity Identity</div>
-            <div className="col-span-3">Assigned Trades</div>
-            <div className="col-span-2 text-center">Collection Matrix</div>
-            <div className="col-span-1">Status</div>
-            <div className="col-span-2 text-right">Actions</div>
           </div>
-          <div className="divide-y divide-gray-50 bg-white">
-            {vendors.map((v: Vendor) => (
-              <div key={v.id} className={cn(
-                "list-item grid grid-cols-12 gap-4 items-center px-6 transition-all duration-200 group",
-                selectedIds.includes(v.id) ? "bg-emerald-50/40" : "hover:bg-gray-50/50"
-              )}>
-                <div className="col-span-1 flex justify-center">
-                   <input 
-                     type="checkbox" 
-                     checked={selectedIds.includes(v.id)}
-                     onChange={() => toggleSelect(v.id)}
-                     className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                   />
-                </div>
-                <div className="col-span-3 flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center overflow-hidden border-2 border-white shadow-sm ring-1 ring-gray-100 shrink-0">
-                    {v.photo ? (
-                      <img src={v.photo} className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all" />
-                    ) : (
-                      <div className="text-gray-200 font-black text-xs">ID</div>
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-black text-[#0f172a] truncate text-sm leading-tight group-hover:text-emerald-700 transition-colors uppercase tracking-tight">{v.name}</div>
-                    <div className="text-[10px] text-gray-500 font-bold uppercase tracking-tight truncate mt-0.5 opacity-80">{v.proprietor || 'Unregistered Proprietor'}</div>
-                    {v.phone && (
-                      <div className="text-[9px] text-gray-400 font-mono flex items-center gap-1 mt-1">
-                        <Phone className="w-2.5 h-2.5" /> {v.phone}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="col-span-3">
-                  <div className="flex flex-wrap gap-1">
-                    {(v.categoryNames || []).map((name: string) => (
-                      <span key={name} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-md text-[9px] font-black uppercase tracking-widest border border-gray-200 shadow-[2px_2px_0px_rgba(0,0,0,0.05)]">
-                        {name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div className="col-span-2 flex flex-col items-center">
-                  <div className="text-[13px] font-black text-[#1e293b]">₦{v.totalDue.toLocaleString()}</div>
-                  <div className="flex items-center gap-1 text-[9px] font-black uppercase text-gray-400">
-                    <TrendingUp className="w-2.5 h-2.5 text-emerald-500" /> ₦{v.totalPaid.toLocaleString()} PAID
-                  </div>
-                </div>
-                <div className="col-span-1">
-                   <div className={cn(
-                    "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tight",
-                    v.status === 'Paid' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 
-                    v.status === 'Partial' ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-red-100 text-red-800 border border-red-200'
-                  )}>
-                    <div className={cn(
-                      "w-1.5 h-1.5 rounded-full",
-                      v.status === 'Paid' ? "bg-emerald-500" :
-                      v.status === 'Partial' ? "bg-amber-500" : "bg-red-500"
-                    )} />
-                    {v.status === 'Not Paid' ? 'Pending' : v.status}
-                  </div>
-                </div>
-                <div className="col-span-2 flex items-center justify-end gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => setDetailVendor(v)} className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Detailed Audit">
-                    <ChevronRight size={18} />
-                  </button>
-                  <button onClick={() => { setSelectedVendor(v); setAmount(''); setNotes(''); }} disabled={v.status === 'Paid'} className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all disabled:opacity-20" title="Rev. Collection">
-                    <Wallet size={18} />
-                  </button>
-                  <button onClick={() => onPrintID(v, 'vendor')} className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="Identity Token">
-                    <IdCard size={18} />
-                  </button>
-                </div>
-              </div>
-            ))}
-            {vendors.length === 0 && (
-              <div className="py-32 text-center flex flex-col items-center">
-                 <div className="w-24 h-24 bg-gray-50 border-4 border-white shadow-xl rounded-[2.5rem] flex items-center justify-center mb-6 text-gray-200">
-                    <Users size={48} />
-                 </div>
-                 <h4 className="text-xl font-black text-gray-900 mb-2 italic">Registry is Empty</h4>
-                 <p className="text-sm text-gray-400 max-w-xs mb-8 font-medium">Verify connection to Firestore or manually register the first vendor establishment.</p>
-                 <button onClick={() => setIsAddingVendor(true)} className="px-10 py-4 bg-[#0f172a] text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl hover:bg-black transition-all active:scale-95">Enroll Vendor</button>
-              </div>
-            )}
+        ))}
+
+        {vendors.length === 0 && (
+          <div className="py-32 text-center flex flex-col items-center">
+             <div className="w-24 h-24 bg-gray-50 border-4 border-white shadow-xl rounded-[2.5rem] flex items-center justify-center mb-6 text-gray-200">
+                <Users size={48} />
+             </div>
+             <h4 className="text-xl font-black text-gray-900 mb-2 italic">Registry Clear</h4>
+             <p className="text-sm text-gray-400 max-w-xs mb-8 font-medium">Capture biometric data and enroll establishment personnel to activate identity printing.</p>
+             <button onClick={() => setIsAddingVendor(true)} className="px-10 py-4 bg-[#0f172a] text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-2xl hover:bg-black transition-all active:scale-95">Enroll Staff</button>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Action Console */}
