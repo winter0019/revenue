@@ -43,13 +43,18 @@ service cloud.firestore {
 
     function isValidVendor(data) {
       return data.name is string && data.name.size() > 0 && data.name.size() < 200
-        && data.categoryId is string && data.categoryId.size() < 100
+        && (
+             (data.categoryIds is list && data.categoryIds.size() > 0) ||
+             (data.categoryId is string && data.categoryId.size() < 100)
+           )
+        && (data.proprietor == null || (data.proprietor is string && data.proprietor.size() < 200))
         && (data.totalDue is number || data.totalDue is int)
         && (data.totalPaid is number || data.totalPaid is int)
         && data.status in ['Paid', 'Not Paid', 'Partial']
-        && (data.phone == null || (data.phone is string && data.phone.size() < 20))
-        && (data.photo == null || (data.photo is string && data.photo.size() < 2000000))
-        && (data.qrCode == null || (data.qrCode is string && data.qrCode.size() < 100));
+        && (data.phone == null || (data.phone is string && data.phone.size() < 30))
+        && (data.photo == null || (data.photo is string && data.photo.size() < 5000000))
+        && (data.qrCode == null || (data.qrCode is string && data.qrCode.size() < 100))
+        && (data.categoryNames == null || data.categoryNames is list);
     }
 
     function isValidWorker(data) {
@@ -67,7 +72,10 @@ service cloud.firestore {
       return data.vendorId is string && data.vendorId.size() < 100
         && (data.amount is number || data.amount is int) && data.amount > 0
         && data.collectedBy == request.auth.uid
-        && (data.date is string || data.date is timestamp);
+        && (data.date is string || data.date is timestamp)
+        && data.vendorName is string
+        && data.receiptId is string
+        && data.collectorName is string;
     }
 
     // --- Collections ---
