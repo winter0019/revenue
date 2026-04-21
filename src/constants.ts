@@ -1,27 +1,27 @@
 import { Category, Vendor } from './types';
 
 export const INITIAL_CATEGORIES: Omit<Category, 'id'>[] = [
-  { name: 'Restaurant', defaultPrice: 60000, color: 'orange' },
-  { name: 'Photocopy', defaultPrice: 60000, color: 'yellow' },
-  { name: 'POS', defaultPrice: 120000, color: 'green' },
-  { name: 'Fast Food', defaultPrice: 25000, color: 'blue' },
-  { name: 'Provision', defaultPrice: 40000, color: 'purple' },
-  { name: 'Charging Spot', defaultPrice: 25000, color: 'amber' },
-  { name: 'Drinks', defaultPrice: 0, color: 'sky' },
-  { name: 'Clothing', defaultPrice: 15000, color: 'indigo' },
-  { name: 'Saloon', defaultPrice: 15000, color: 'rose' },
-  { name: 'Barbing', defaultPrice: 15000, color: 'red' },
-  { name: 'Laundry (Male)', defaultPrice: 25000, color: 'emerald' },
-  { name: 'Laundry (Female)', defaultPrice: 10000, color: 'pink' },
-  { name: 'Kosai', defaultPrice: 10000, color: 'orange' },
-  { name: 'Awara', defaultPrice: 10000, color: 'yellow' },
-  { name: 'Kunu', defaultPrice: 5000, color: 'lime' },
-  { name: 'Fan Milk', defaultPrice: 5000, color: 'cyan' },
-  { name: 'Shoe Maker', defaultPrice: 5000, color: 'stone' },
-  { name: 'Meat Pie (Earpie)', defaultPrice: 5000, color: 'orange' },
-  { name: 'Photographers', defaultPrice: 20000, color: 'violet' },
-  { name: 'Tailors', defaultPrice: 25000, color: 'fuchsia' },
-  { name: 'Fruit Seller', defaultPrice: 10000, color: 'green' }
+  { name: 'Restaurant', defaultPrice: 60000, color: 'orange', maxHelpers: 5 },
+  { name: 'Photocopy', defaultPrice: 60000, color: 'yellow', maxHelpers: 3 },
+  { name: 'POS', defaultPrice: 120000, color: 'green', maxHelpers: 3 },
+  { name: 'Fast Food', defaultPrice: 25000, color: 'blue', maxHelpers: 4 },
+  { name: 'Provision', defaultPrice: 40000, color: 'purple', maxHelpers: 4 },
+  { name: 'Charging Spot', defaultPrice: 25000, color: 'amber', maxHelpers: 2 },
+  { name: 'Drinks', defaultPrice: 0, color: 'sky', maxHelpers: 3 },
+  { name: 'Clothing', defaultPrice: 15000, color: 'indigo', maxHelpers: 1 },
+  { name: 'Saloon', defaultPrice: 15000, color: 'rose', maxHelpers: 2 },
+  { name: 'Barbing', defaultPrice: 15000, color: 'red', maxHelpers: 2 },
+  { name: 'Laundry (Male)', defaultPrice: 25000, color: 'emerald', maxHelpers: 2 },
+  { name: 'Laundry (Female)', defaultPrice: 10000, color: 'pink', maxHelpers: 2 },
+  { name: 'Kosai', defaultPrice: 10000, color: 'orange', maxHelpers: 1 },
+  { name: 'Awara', defaultPrice: 10000, color: 'yellow', maxHelpers: 1 },
+  { name: 'Kunu', defaultPrice: 5000, color: 'lime', maxHelpers: 1 },
+  { name: 'Fan Milk', defaultPrice: 5000, color: 'cyan', maxHelpers: 1 },
+  { name: 'Shoe Maker', defaultPrice: 5000, color: 'stone', maxHelpers: 1 },
+  { name: 'Meat Pie (Earpie)', defaultPrice: 5000, color: 'orange', maxHelpers: 1 },
+  { name: 'Photographers', defaultPrice: 20000, color: 'violet', maxHelpers: 1 },
+  { name: 'Tailors', defaultPrice: 25000, color: 'fuchsia', maxHelpers: 1 },
+  { name: 'Fruit Seller', defaultPrice: 10000, color: 'green', maxHelpers: 1 }
 ];
 
 export const VENDOR_MAP: Record<string, string[]> = {

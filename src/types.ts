@@ -3,6 +3,7 @@ export interface Category {
   name: string;
   defaultPrice: number;
   color: string;
+  maxHelpers?: number;
 }
 
 export interface Vendor {
@@ -15,6 +16,21 @@ export interface Vendor {
   status: 'Paid' | 'Not Paid' | 'Partial';
   lastPaymentDate?: string;
   phone?: string;
+  photo?: string;
+  qrCode?: string;
+}
+
+export interface Worker {
+  id: string;
+  name: string;
+  role: string;
+  phone?: string;
+  photo?: string;
+  qrCode?: string;
+  vendorId?: string;
+  vendorName?: string;
+  createdAt: string;
+  deleted?: boolean;
 }
 
 export interface Payment {

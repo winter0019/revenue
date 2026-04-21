@@ -35,22 +35,74 @@ service cloud.firestore {
       return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff'];
     }
 
+    // --- Validation Helpers ---
+    function isValidCategory(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 100
+        && (data.defaultPrice is number || data.defaultPrice is int);
+    }
+
+    function isValidVendor(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 200
+        && data.categoryId is string && data.categoryId.size() < 100
+        && (data.totalDue is number || data.totalDue is int)
+        && (data.totalPaid is number || data.totalPaid is int)
+        && data.status in ['Paid', 'Not Paid', 'Partial']
+        && (data.phone == null || (data.phone is string && data.phone.size() < 20))
+        && (data.photo == null || (data.photo is string && data.photo.size() < 2000000))
+        && (data.qrCode == null || (data.qrCode is string && data.qrCode.size() < 100));
+    }
+
+    function isValidWorker(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 200
+        && data.role is string && data.role.size() > 0 && data.role.size() < 100
+        && (data.qrCode is string && data.qrCode.size() < 100)
+        && (data.phone == null || (data.phone is string && data.phone.size() < 20))
+        && (data.photo == null || (data.photo is string && data.photo.size() < 2000000))
+        && (data.vendorId == null || (data.vendorId is string && data.vendorId.size() < 100))
+        && (data.vendorName == null || (data.vendorName is string && data.vendorName.size() < 200))
+        && (data.createdAt is string || data.createdAt is timestamp);
+    }
+
+    function isValidPayment(data) {
+      return data.vendorId is string && data.vendorId.size() < 100
+        && (data.amount is number || data.amount is int) && data.amount > 0
+        && data.collectedBy == request.auth.uid
+        && (data.date is string || data.date is timestamp);
+    }
+
     // --- Collections ---
 
     // Categories: Managed by Admins, Read by Staff
     match /categories/{categoryId} {
       allow read: if isStaff();
-      allow write: if isAdmin() && isValidId(categoryId);
+      allow create, update: if isAdmin() && isValidCategory(incoming());
+      allow delete: if isAdmin();
     }
 
     // Vendors: Created/Managed by Admins, Updated during payment by Staff
     match /vendors/{vendorId} {
       allow read: if isStaff();
-      allow create: if isAdmin() && isValidId(vendorId);
+      allow create: if isAdmin() && isValidVendor(incoming());
       allow update: if isStaff() && (
-        // Action: Update Payment Totals (Only totalPaid and status changes)
-        incoming().diff(existing()).affectedKeys().hasOnly(['totalPaid', 'status', 'lastPaymentDate'])
-        || isAdmin()
+        isAdmin() || (
+          // Action: Update Payment Totals
+          isValidVendor(incoming()) && 
+          incoming().diff(existing()).affectedKeys().hasOnly(['totalPaid', 'status', 'lastPaymentDate'])
+        )
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Workers: Assist staff
+    match /workers/{workerId} {
+      allow read: if isStaff();
+      allow create: if isAdmin() && isValidWorker(incoming());
+      allow update: if isStaff() && (
+        isAdmin() || (
+          // Allow soft delete or updates if admin/staff
+          isValidWorker(incoming()) &&
+          (incoming().diff(existing()).affectedKeys().hasOnly(['deleted']) || isAdmin())
+        )
       );
       allow delete: if isAdmin();
     }
@@ -60,8 +112,7 @@ service cloud.firestore {
       allow read: if isStaff();
       allow create: if isStaff() 
         && isValidId(paymentId)
-        && incoming().collectedBy == request.auth.uid
-        && incoming().amount > 0
+        && isValidPayment(incoming())
         && exists(/databases/$(database)/documents/vendors/$(incoming().vendorId));
       allow update, delete: if isAdmin();
     }

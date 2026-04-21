@@ -23,9 +23,27 @@
         "totalPaid": { "type": "number" },
         "status": { "type": "string", "enum": ["Paid", "Not Paid", "Partial"] },
         "lastPaymentDate": { "type": "string", "format": "date-time" },
-        "phone": { "type": "string", "description": "Vendor contact number" }
+        "phone": { "type": "string", "description": "Vendor contact number" },
+        "photo": { "type": "string", "description": "Base64 or URL of photo" },
+        "qrCode": { "type": "string", "description": "Unique verification code" }
       },
       "required": ["name", "categoryId"]
+    },
+    "Worker": {
+      "title": "Worker",
+      "description": "Staff assisting during camp",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "phone": { "type": "string" },
+        "photo": { "type": "string" },
+        "qrCode": { "type": "string" },
+        "vendorId": { "type": "string", "description": "ID of the assigned vendor" },
+        "vendorName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "role", "qrCode"]
     },
     "Payment": {
       "title": "Payment",
@@ -71,6 +89,10 @@
     "/users/{uid}": {
       "schema": "User",
       "description": "User profiles and roles"
+    },
+    "/workers/{workerId}": {
+      "schema": "Worker",
+      "description": "Profiles for assist workers"
     }
   }
 }
