@@ -38,7 +38,9 @@ service cloud.firestore {
     // --- Validation Helpers ---
     function isValidCategory(data) {
       return data.name is string && data.name.size() > 0 && data.name.size() < 100
-        && (data.defaultPrice is number || data.defaultPrice is int);
+        && (data.defaultPrice is number || data.defaultPrice is int)
+        && (data.deleted == null || data.deleted is bool)
+        && (data.color == null || data.color is string);
     }
 
     function isValidVendor(data) {

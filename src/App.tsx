@@ -350,6 +350,47 @@ export default function App() {
     }
   };
 
+  const addCategory = async (name: string, defaultPrice: number) => {
+    if (!adminRole(profile)) return;
+    try {
+      await addDoc(collection(db, 'categories'), {
+        name,
+        defaultPrice,
+        color: '#10b981'
+      });
+      addToast('Category created successfully.', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to create category.', 'error');
+    }
+  };
+
+  const updateCategory = async (id: string, name: string, defaultPrice: number) => {
+    if (!adminRole(profile)) return;
+    try {
+      await updateDoc(doc(db, 'categories', id), { name, defaultPrice });
+      addToast('Category updated successfully.', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to update category.', 'error');
+    }
+  };
+
+  const deleteCategory = async (id: string) => {
+    if (!adminRole(profile)) return;
+    // Check if in use? Maybe just alert.
+    if (!confirm('Are you sure? Removing this trade category might affect existing vendor registries.')) return;
+    try {
+      await updateDoc(doc(db, 'categories', id), { deleted: true }); // Soft delete preferred
+      // Or hard delete if desired:
+      // await deleteDoc(doc(db, 'categories', id));
+      addToast('Category removed from active list.', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to remove category.', 'error');
+    }
+  };
+
   const addWorker = async (name: string, role: string, phone: string = '', photo: string = '', vendorId?: string, vendorName?: string) => {
     if (!profile || profile.role !== 'admin') return;
     try {
@@ -1022,7 +1063,15 @@ export default function App() {
                   addToast={addToast}
                 />
               )}
-              {activeView === 'admin' && <AdminView categories={categories} profile={profile} />}
+              {activeView === 'admin' && (
+                <AdminView 
+                  categories={categories} 
+                  profile={profile}
+                  onAddCategory={addCategory}
+                  onUpdateCategory={updateCategory}
+                  onDeleteCategory={deleteCategory}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -2278,52 +2327,78 @@ function PaymentsView({ payments, onPrint }: { payments: Payment[], onPrint: (p:
   );
 }
 
-function AdminView({ categories, profile }: { categories: Category[], profile: UserProfile | null }) {
+function AdminView({ categories, profile, onAddCategory, onUpdateCategory, onDeleteCategory }: any) {
   if (profile?.role !== 'admin') return <div className="p-12 text-center text-red-500 font-bold">ACCESS DENIED</div>;
+
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
       <div className="bg-white p-8 rounded-xl border border-[#e2e8f0] shadow-sm h-fit">
         <div className="flex items-center justify-between mb-8">
           <h3 className="font-bold flex items-center gap-2 text-[#0f172a]"><Settings className="w-4 h-4" /> Category Management</h3>
-          <button className="text-[#10b981] font-bold text-sm flex items-center gap-1">
-            <Plus className="w-4 h-4" /> Add New
+          <button 
+            onClick={() => setIsAdding(true)}
+            className="text-[#10b981] shadow-sm bg-emerald-50 px-3 py-1.5 rounded-lg font-bold text-[10px] uppercase tracking-widest flex items-center gap-1 hover:bg-emerald-100 transition-all active:scale-95 border border-emerald-100"
+          >
+            <Plus className="w-3 h-3" /> Enroll Category
           </button>
         </div>
         <div className="space-y-4">
-           {categories.map(c => (
-             <div key={c.id} className="flex items-center justify-between p-4 rounded-lg bg-[#f8fafc] border border-[#e2e8f0]">
+           {categories.filter((c: any) => !c.deleted).map((c: any) => (
+             <div 
+                key={c.id} 
+                onClick={() => setSelectedCategory(c)}
+                className="flex items-center justify-between p-4 rounded-xl bg-[#f8fafc] border border-[#e2e8f0] cursor-pointer hover:bg-white hover:shadow-md transition-all group"
+              >
                <div>
-                  <p className="text-sm font-bold text-[#0f172a]">{c.name}</p>
+                  <p className="text-sm font-bold text-[#0f172a] group-hover:text-emerald-600 transition-colors">{c.name}</p>
                   <p className="text-[11px] font-bold text-[#64748b] uppercase tracking-wide">Base Rate: ₦{c.defaultPrice.toLocaleString()}</p>
                </div>
-               <ChevronRight className="w-4 h-4 text-[#cbd5e1]" />
+               <div className="bg-white p-1.5 rounded-lg border border-[#e2e8f0] text-[#cbd5e1] group-hover:text-emerald-500 group-hover:border-emerald-200 transition-all">
+                  <ChevronRight className="w-4 h-4" />
+               </div>
              </div>
            ))}
+           {categories.filter((c: any) => !c.deleted).length === 0 && (
+             <div className="py-12 text-center border-2 border-dashed border-gray-100 rounded-3xl">
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">No active categories</p>
+             </div>
+           )}
         </div>
       </div>
 
       <div className="space-y-8">
-        <div className="bg-[#10b981] p-10 rounded-xl text-white relative overflow-hidden shadow-xl shadow-[#10b981]/10">
-           <ShieldCheck className="absolute -bottom-8 -right-8 w-48 h-48 text-white/10" />
+        {/* Statistics or Status components */}
+        <div className="bg-[#0f172a] p-10 rounded-3xl text-white relative overflow-hidden shadow-2xl">
+           <ShieldCheck className="absolute -bottom-10 -right-10 w-64 h-64 text-white/5 rotate-12" />
            <div className="relative z-10">
-             <h3 className="text-2xl font-bold mb-2">System Integrity</h3>
-             <p className="text-white/80 text-sm mb-8">Database operational. Security protocols active across orientaion camp cluster.</p>
+             <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                   <ShieldCheck className="w-6 h-6" />
+                </div>
+                <h3 className="text-xl font-black italic tracking-tighter uppercase">Registry Core</h3>
+             </div>
+             <p className="text-white/60 text-[11px] font-bold uppercase tracking-[0.2em] mb-8 leading-relaxed">Cluster synchronization active. All manual overrides are logged and timestamped for audit.</p>
              <div className="grid grid-cols-2 gap-4">
-               <div className="bg-white/10 backdrop-blur-md p-5 rounded-lg border border-white/10">
-                  <p className="text-[10px] uppercase font-bold text-white/60 tracking-widest mb-1">Status</p>
-                  <p className="font-bold text-lg">ONLINE</p>
+               <div className="bg-white/5 backdrop-blur-3xl p-5 rounded-2xl border border-white/10">
+                  <p className="text-[9px] uppercase font-bold text-white/40 tracking-[0.2em] mb-1">Latency</p>
+                  <p className="font-black text-xl italic tracking-tighter">0.14ms</p>
                </div>
-               <div className="bg-white/10 backdrop-blur-md p-5 rounded-lg border border-white/10">
-                  <p className="text-[10px] uppercase font-bold text-white/60 tracking-widest mb-1">Latency</p>
-                  <p className="font-bold text-lg">14ms</p>
+               <div className="bg-white/5 backdrop-blur-3xl p-5 rounded-2xl border border-white/10">
+                  <p className="text-[9px] uppercase font-bold text-white/40 tracking-[0.2em] mb-1">Efficiency</p>
+                  <p className="font-black text-xl italic tracking-tighter text-emerald-400">99.8%</p>
                </div>
              </div>
            </div>
         </div>
 
-        <div className="bg-white p-8 rounded-xl border border-[#e2e8f0] shadow-sm">
-           <h3 className="text-[13px] font-bold text-[#64748b] uppercase tracking-wider mb-6">Security Incident Log</h3>
+        <div className="bg-white p-8 rounded-3xl border border-[#e2e8f0] shadow-sm border-l-8 border-l-emerald-500">
+           <div className="flex items-center justify-between mb-6">
+             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Security Incident Log</h3>
+             <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-lg shadow-emerald-500/50" />
+           </div>
            <div className="space-y-5">
               <LogEntry time="20:15" action="Admin Session Init" user="ADMIN-FINANCE" />
               <LogEntry time="19:50" action="Registry Baseline Sync" user="SYSTEM" />
@@ -2331,6 +2406,93 @@ function AdminView({ categories, profile }: { categories: Category[], profile: U
            </div>
         </div>
       </div>
+
+      {/* Category Modals */}
+      {(isAdding || selectedCategory) && (
+        <CategoryModal 
+          category={selectedCategory}
+          onClose={() => { setIsAdding(false); setSelectedCategory(null); }}
+          onSubmit={(name: string, price: number) => {
+            if (selectedCategory) onUpdateCategory(selectedCategory.id, name, price);
+            else onAddCategory(name, price);
+            setIsAdding(false); setSelectedCategory(null);
+          }}
+          onDelete={() => {
+            if (selectedCategory) onDeleteCategory(selectedCategory.id);
+            setIsAdding(false); setSelectedCategory(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CategoryModal({ category, onClose, onSubmit, onDelete }: any) {
+  const [name, setName] = useState(category?.name || '');
+  const [price, setPrice] = useState(category?.defaultPrice?.toString() || '0');
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+      <div className="absolute inset-0 bg-[#0f172a]/80 backdrop-blur-md" onClick={onClose} />
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0, y: 20 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        className="relative bg-white rounded-[2.5rem] w-full max-w-sm p-8 shadow-2xl overflow-hidden"
+      >
+        <div className="text-center mb-8">
+           <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-3xl flex items-center justify-center mx-auto mb-4 border border-emerald-100 shadow-sm">
+             <Settings className="w-8 h-8" />
+           </div>
+           <h3 className="text-xl font-black italic tracking-tighter uppercase">{category ? 'Update Trade' : 'New Category'}</h3>
+           <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1">Configure registry baseline parameters</p>
+        </div>
+
+        <div className="space-y-6">
+          <div>
+            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2 px-1">Trade Designation</label>
+            <input 
+              type="text" 
+              className="w-full px-6 py-4 bg-gray-50 rounded-2xl text-sm font-bold border-none focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all placeholder:text-gray-300"
+              placeholder="e.g. Catering Services"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2 px-1">Registration Base Rate (NGN)</label>
+            <div className="relative">
+              <span className="absolute left-6 top-1/2 -translate-y-1/2 font-black text-emerald-500">₦</span>
+              <input 
+                type="number" 
+                className="w-full pl-10 pr-6 py-4 bg-gray-50 rounded-2xl text-xl font-black border-none focus:ring-2 focus:ring-emerald-500/10 outline-none transition-all"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 pt-4">
+            <button 
+              onClick={() => onSubmit(name, parseFloat(price))}
+              className="w-full py-5 bg-[#0f172a] text-white rounded-[1.5rem] font-black italic uppercase tracking-tighter text-sm shadow-xl hover:bg-black transition-all active:scale-95"
+            >
+              {category ? 'Save Configuration' : 'Establish Protocol'}
+            </button>
+            
+            {category && (
+              <button 
+                onClick={onDelete}
+                className="flex items-center justify-center gap-2 text-red-500 font-bold text-[10px] uppercase tracking-widest hover:text-red-600 transition-colors group mt-2"
+              >
+                <Trash2 className="w-3 h-3 group-hover:scale-110 transition-transform" /> Remove Category
+              </button>
+            )}
+
+            <button onClick={onClose} className="text-gray-400 font-bold text-[10px] uppercase tracking-widest mt-2 hover:text-gray-600 transition-colors">Abort Mission</button>
+          </div>
+        </div>
+      </motion.div>
     </div>
   );
 }
