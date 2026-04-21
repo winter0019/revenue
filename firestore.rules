@@ -15,6 +15,18 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email_verified == true;
     }
 
+    function getRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getRole() == 'admin';
+    }
+
+    function isStaff() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getRole() in ['admin', 'staff'];
+    }
+
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
@@ -25,14 +37,6 @@ service cloud.firestore {
 
     function existing() {
       return resource.data;
-    }
-
-    function isAdmin() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    function isStaff() {
-      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff'];
     }
 
     // --- Validation Helpers ---
@@ -53,21 +57,23 @@ service cloud.firestore {
         && (data.totalDue is number || data.totalDue is int)
         && (data.totalPaid is number || data.totalPaid is int)
         && data.status in ['Paid', 'Not Paid', 'Partial']
-        && (data.phone == null || (data.phone is string && data.phone.size() < 30))
-        && (data.photo == null || (data.photo is string && data.photo.size() < 5000000))
+        && (data.phone == null || (data.phone is string && data.phone.size() < 40))
+        && (data.photo == null || (data.photo is string && data.photo.size() < 10000000))
         && (data.qrCode == null || (data.qrCode is string && data.qrCode.size() < 100))
-        && (data.categoryNames == null || data.categoryNames is list);
+        && (data.categoryNames == null || data.categoryNames is list)
+        && (data.lastPaymentDate == null || data.lastPaymentDate is string || data.lastPaymentDate is timestamp);
     }
 
     function isValidWorker(data) {
       return data.name is string && data.name.size() > 0 && data.name.size() < 200
         && data.role is string && data.role.size() > 0 && data.role.size() < 100
         && (data.qrCode is string && data.qrCode.size() < 100)
-        && (data.phone == null || (data.phone is string && data.phone.size() < 20))
-        && (data.photo == null || (data.photo is string && data.photo.size() < 2000000))
+        && (data.phone == null || (data.phone is string && data.phone.size() < 40))
+        && (data.photo == null || (data.photo is string && data.photo.size() < 10000000))
         && (data.vendorId == null || (data.vendorId is string && data.vendorId.size() < 100))
         && (data.vendorName == null || (data.vendorName is string && data.vendorName.size() < 200))
-        && (data.createdAt is string || data.createdAt is timestamp);
+        && (data.createdAt is string || data.createdAt is timestamp)
+        && (data.deleted == null || data.deleted is bool);
     }
 
     function isValidPayment(data) {
@@ -77,7 +83,8 @@ service cloud.firestore {
         && (data.date is string || data.date is timestamp)
         && data.vendorName is string
         && data.receiptId is string
-        && data.collectorName is string;
+        && data.collectorName is string
+        && (data.notes == null || data.notes is string);
     }
 
     // --- Collections ---
