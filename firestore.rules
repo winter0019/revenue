@@ -91,10 +91,9 @@ service cloud.firestore {
     match /vendors/{vendorId} {
       allow read: if isStaff();
       allow create: if isAdmin() && isValidVendor(incoming());
-      allow update: if isStaff() && (
+      allow update: if isStaff() && isValidVendor(incoming()) && (
         isAdmin() || (
           // Action: Update Payment Totals
-          isValidVendor(incoming()) && 
           incoming().diff(existing()).affectedKeys().hasOnly(['totalPaid', 'status', 'lastPaymentDate'])
         )
       );

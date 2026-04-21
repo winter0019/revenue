@@ -47,7 +47,8 @@ import {
   Scan,
   UserCheck,
   IdCard,
-  Trash2
+  Trash2,
+  Edit2
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -319,6 +320,33 @@ export default function App() {
     } catch (err) {
       console.error(err);
       addToast('Failed to enroll establishment.', 'error');
+    }
+  };
+
+  const updateVendor = async (id: string, name: string, proprietor: string, categoryIds: string[], phone: string, totalPaid: number) => {
+    if (!profile || profile.role !== 'admin') return;
+    const selectedCats = categories.filter(c => categoryIds.includes(c.id));
+    if (selectedCats.length === 0) return;
+
+    const totalDue = selectedCats.reduce((acc, c) => acc + c.defaultPrice, 0);
+    const categoryNames = selectedCats.map(c => c.name);
+    const status = totalPaid >= totalDue ? 'Paid' : totalPaid > 0 ? 'Partial' : 'Not Paid';
+
+    try {
+      await updateDoc(doc(db, 'vendors', id), {
+        name,
+        proprietor,
+        categoryIds,
+        categoryNames,
+        totalDue,
+        totalPaid,
+        status,
+        phone
+      });
+      addToast('Vendor profile updated successfully.', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to update vendor.', 'error');
     }
   };
 
@@ -969,6 +997,7 @@ export default function App() {
                   onPayment={handlePayment}
                   profile={profile}
                   onAddVendor={addVendor}
+                  onUpdateVendor={updateVendor}
                   onPrintID={generateIDCard}
                   onPrintQR={printVendorQR}
                   onPrintBulk={generateBulkIDs}
@@ -1727,6 +1756,7 @@ function VendorsView({
   onPayment, 
   profile, 
   onAddVendor, 
+  onUpdateVendor,
   onPrintID, 
   onPrintQR, 
   onPrintBulk, 
@@ -1737,6 +1767,7 @@ function VendorsView({
   addToast
 }: any) {
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
+  const [editingVendor, setEditingVendor] = useState<Vendor | null>(null);
   const [detailVendor, setDetailVendor] = useState<Vendor | null>(null);
   const [amount, setAmount] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
@@ -1843,21 +1874,27 @@ function VendorsView({
               </div>
 
               {/* Action Bar */}
-              <div className="mt-6 pt-6 border-t border-gray-50 flex items-center justify-end gap-8">
-                 <button onClick={() => setDetailVendor(v)} className="p-2 text-gray-400 hover:text-emerald-600 transition-colors">
+              <div className="mt-6 pt-6 border-t border-gray-50 flex items-center justify-end gap-6">
+                 <button onClick={() => setDetailVendor(v)} className="p-2 text-gray-400 hover:text-emerald-600 transition-colors" title="View Details">
                     <ChevronRight size={24} />
                  </button>
                  
-                 <button onClick={() => onPrintID(v, 'vendor')} className="p-2 text-gray-400 hover:text-emerald-600 transition-colors">
+                 {profile?.role === 'admin' && (
+                   <button onClick={() => setEditingVendor(v)} className="p-2 text-gray-400 hover:text-orange-600 transition-colors" title="Edit Profile">
+                      <Edit2 size={20} />
+                   </button>
+                 )}
+
+                 <button onClick={() => onPrintID(v, 'vendor')} className="p-2 text-gray-400 hover:text-emerald-600 transition-colors" title="Print ID">
                     <IdCard size={24} />
                  </button>
 
                  <button 
                   onClick={() => { setSelectedVendor(v); setAmount(''); setNotes(''); }} 
                   disabled={v.status === 'Paid'}
-                  className="bg-[#10b981] hover:bg-[#059669] disabled:opacity-20 text-white px-8 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
+                  className="bg-[#10b981] hover:bg-[#059669] disabled:opacity-20 text-white px-8 py-3 rounded-2xl font-black text-sm uppercase tracking-widest shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center gap-2"
                  >
-                   Pay Now
+                   <Wallet size={18} /> Pay Now
                  </button>
               </div>
             </div>
@@ -1988,14 +2025,26 @@ function VendorsView({
         </div>
       )}
 
-      {/* Add Vendor Modal */}
+      {/* Add/Edit Vendor Modal */}
       {isAddingVendor && (
-        <AddVendorModal 
+        <VendorModal 
           categories={categories} 
           onClose={() => setIsAddingVendor(false)} 
-          onSubmit={(name: string, proprietor: string, catId: string, phone: string, photo: string) => {
-            onAddVendor(name, proprietor, catId, phone, photo);
+          onSubmit={(name: string, proprietor: string, catIds: string[], phone: string, photo: string) => {
+            onAddVendor(name, proprietor, catIds, phone, photo);
             setIsAddingVendor(false);
+          }} 
+        />
+      )}
+
+      {editingVendor && (
+        <VendorModal 
+          vendor={editingVendor}
+          categories={categories} 
+          onClose={() => setEditingVendor(null)} 
+          onSubmit={(name: string, proprietor: string, catIds: string[], phone: string, photo: string, totalPaid: number) => {
+            onUpdateVendor(editingVendor.id, name, proprietor, catIds, phone, totalPaid);
+            setEditingVendor(null);
           }} 
         />
       )}
@@ -2017,12 +2066,13 @@ function VendorsView({
   );
 }
 
-function AddVendorModal({ categories, onClose, onSubmit }: any) {
-  const [name, setName] = useState('');
-  const [proprietor, setProprietor] = useState('');
-  const [phone, setPhone] = useState('');
-  const [photo, setPhoto] = useState('');
-  const [selectedCatIds, setSelectedCatIds] = useState<string[]>([]);
+function VendorModal({ categories, onClose, onSubmit, vendor }: any) {
+  const [name, setName] = useState(vendor?.name || '');
+  const [proprietor, setProprietor] = useState(vendor?.proprietor || '');
+  const [phone, setPhone] = useState(vendor?.phone || '');
+  const [photo, setPhoto] = useState(vendor?.photo || '');
+  const [totalPaid, setTotalPaid] = useState<string>(vendor?.totalPaid?.toString() || '0');
+  const [selectedCatIds, setSelectedCatIds] = useState<string[]>(vendor?.categoryIds || []);
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2040,7 +2090,7 @@ function AddVendorModal({ categories, onClose, onSubmit }: any) {
       alert('Please enter establishment name and select at least one trade');
       return;
     }
-    onSubmit(name, proprietor, selectedCatIds, phone, photo);
+    onSubmit(name, proprietor, selectedCatIds, phone, photo, parseFloat(totalPaid || '0'));
   };
 
   const calculatedTotal = useMemo(() => {
@@ -2058,8 +2108,8 @@ function AddVendorModal({ categories, onClose, onSubmit }: any) {
         className="relative bg-white rounded-3xl w-full max-w-md p-6 space-y-6 max-h-[90vh] overflow-y-auto"
       >
         <div className="text-center">
-          <h3 className="text-lg font-bold">Add New Vendor</h3>
-          <p className="text-gray-500 text-sm">Register a new vendor in the system</p>
+          <h3 className="text-lg font-bold">{vendor ? 'Edit Vendor Profile' : 'Add New Vendor'}</h3>
+          <p className="text-gray-500 text-sm">{vendor ? 'Modify establishment or financial details' : 'Register a new vendor in the system'}</p>
         </div>
         <div className="space-y-4">
           <div className="flex flex-col items-center gap-4">
@@ -2108,7 +2158,7 @@ function AddVendorModal({ categories, onClose, onSubmit }: any) {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-2">Trades / Categories (Select all that apply)</label>
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Trades / Categories (Select all that apply)</label>
             <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto p-3 bg-gray-50 rounded-2xl border border-gray-100 shadow-inner">
               {categories.length === 0 && <p className="text-[10px] text-gray-400 text-center py-4">No categories available. Please seed database.</p>}
               {categories.map((c: any) => (
@@ -2129,12 +2179,28 @@ function AddVendorModal({ categories, onClose, onSubmit }: any) {
                 </label>
               ))}
             </div>
-            {selectedCatIds.length > 0 && (
-              <div className="mt-2 flex items-center justify-between p-3 bg-orange-50 rounded-xl border border-orange-100">
-                <span className="text-[10px] font-bold text-orange-600 uppercase tracking-widest">Calculated Total Due</span>
-                <span className="text-sm font-black text-orange-700">₦{calculatedTotal.toLocaleString()}</span>
-              </div>
-            )}
+            
+            <div className="grid grid-cols-2 gap-4 mt-2">
+               <div className="p-3 bg-orange-50 rounded-xl border border-orange-100 flex flex-col justify-center">
+                 <span className="text-[9px] font-bold text-orange-600 uppercase tracking-widest leading-none mb-1">Total Due</span>
+                 <span className="text-sm font-black text-orange-700">₦{calculatedTotal.toLocaleString()}</span>
+               </div>
+               
+               {vendor && (
+                 <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                    <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Adjust Paid (Audit)</label>
+                    <div className="relative">
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400 tracking-tighter shrink-0">₦</span>
+                      <input 
+                        type="number"
+                        className="w-full pl-3 bg-transparent text-sm font-black text-gray-700 outline-none border-none p-0 focus:ring-0"
+                        value={totalPaid}
+                        onChange={(e) => setTotalPaid(e.target.value)}
+                      />
+                    </div>
+                 </div>
+               )}
+            </div>
           </div>
         </div>
         <div className="flex flex-col gap-2 pt-4">
@@ -2143,7 +2209,7 @@ function AddVendorModal({ categories, onClose, onSubmit }: any) {
             onClick={handleFormSubmit}
             className="w-full py-4 bg-[#0f172a] text-white rounded-2xl font-bold shadow-lg hover:bg-black disabled:opacity-50 transition-all text-sm uppercase tracking-widest"
           >
-            Create Multi-Trade ID
+            {vendor ? 'Update Registry' : 'Create Multi-Trade ID'}
           </button>
           <button onClick={onClose} className="w-full py-2 text-xs text-gray-400 font-medium">Cancel Enrollment</button>
         </div>
