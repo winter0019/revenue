@@ -19,7 +19,7 @@ export const INITIAL_CATEGORIES: Omit<Category, 'id'>[] = [
   { name: 'Fan Milk', defaultPrice: 5000, color: 'cyan', maxHelpers: 1 },
   { name: 'Shoe Maker', defaultPrice: 5000, color: 'stone', maxHelpers: 1 },
   { name: 'Meat Pie (Earpie)', defaultPrice: 5000, color: 'orange', maxHelpers: 1 },
-  { name: 'Photographers', defaultPrice: 20000, color: 'violet', maxHelpers: 1 },
+  { name: 'Photographers', defaultPrice: 40000, color: 'violet', maxHelpers: 1 },
   { name: 'Tailors', defaultPrice: 25000, color: 'fuchsia', maxHelpers: 1 },
   { name: 'Fruit Seller', defaultPrice: 10000, color: 'green', maxHelpers: 1 },
   { name: 'Snacks', defaultPrice: 10000, color: 'amber', maxHelpers: 2 }

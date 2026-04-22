@@ -208,10 +208,48 @@ export default function App() {
           });
         }
       }
-      alert('Database seeded successfully!');
+      addToast('Database seeded successfully!', 'success');
     } catch (err) {
       console.error(err);
-      alert('Error seeding database');
+      addToast('Error seeding database', 'error');
+    } finally {
+      setInitializing(false);
+    }
+  };
+
+  const syncGlobalRates = async () => {
+    if (!adminRole(profile) || initializing) return;
+    if (!confirm('This will update ALL Photographer rates to ₦40,000 and sync other categories to system defaults. Continue?')) return;
+    
+    setInitializing(true);
+    let updatedCount = 0;
+    try {
+      // 1. Sync Categories
+      for (const cat of categories) {
+        const initial = INITIAL_CATEGORIES.find(ic => ic.name === cat.name);
+        if (initial && initial.defaultPrice !== cat.defaultPrice) {
+          await updateDoc(doc(db, 'categories', cat.id), { defaultPrice: initial.defaultPrice });
+        }
+      }
+
+      // 2. Sync Vendors (Specifically Photographers as requested)
+      const photographerCat = categories.find(c => c.name === 'Photographers');
+      if (photographerCat) {
+        const initial = INITIAL_CATEGORIES.find(ic => ic.name === 'Photographers');
+        const newPrice = initial?.defaultPrice || 40000;
+
+        for (const vendor of vendors) {
+          if (vendor.categoryNames.includes('Photographers') && vendor.totalDue !== newPrice) {
+            await updateDoc(doc(db, 'vendors', vendor.id), { totalDue: newPrice });
+            updatedCount++;
+          }
+        }
+      }
+      
+      addToast(`Synchronization complete. Updated ${updatedCount} photographer records.`, 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Synchronization failed.', 'error');
     } finally {
       setInitializing(false);
     }
@@ -264,11 +302,13 @@ export default function App() {
       await runTransaction(db, async (transaction) => {
         const vRef = doc(db, 'vendors', vendor.id);
         const vSnap = await transaction.get(vRef);
-        if (!vSnap.exists()) throw "Vendor mismatch";
+        if (!vSnap.exists()) throw new Error("CRITICAL: Vendor registry mismatch or document deleted.");
         
-        const currentPaid = vSnap.data().totalPaid || 0;
+        const vData = vSnap.data();
+        const currentPaid = vData.totalPaid || 0;
+        const totalDue = vData.totalDue || 0;
         const newPaid = currentPaid + amount;
-        const status = newPaid >= vendor.totalDue ? 'Paid' : newPaid > 0 ? 'Partial' : 'Not Paid';
+        const status = newPaid >= totalDue ? 'Paid' : newPaid > 0 ? 'Partial' : 'Not Paid';
         
         transaction.update(vRef, {
           totalPaid: newPaid,
@@ -284,23 +324,25 @@ export default function App() {
           date: new Date().toISOString(),
           receiptId: receiptId,
           collectedBy: user.uid,
-          collectorName: profile.name,
+          collectorName: profile.name || 'Staff User',
           notes: notes
         });
       });
-      alert('Payment recorded successfully!');
+      addToast(`Payment of ₦${amount.toLocaleString()} recorded for ${vendor.name}. Receipt: ${receiptId}`, 'success');
     } catch (err) {
-      console.error(err);
-      alert('Payment failed');
+      console.error("Payment Transaction Error:", err);
+      const errorMessage = err instanceof Error ? err.message : 'Permission denied or network failure.';
+      addToast(`Payment Failed: ${errorMessage}`, 'error');
     }
   };
 
-  const addVendor = async (name: string, proprietor: string = '', categoryIds: string[], phone: string = '', photo: string = '') => {
+  const addVendor = async (name: string, proprietor: string = '', categoryIds: string[], phone: string = '', photo: string = '', totalPaid: number = 0, totalDue?: number) => {
     if (!profile || profile.role !== 'admin') return;
     const selectedCats = categories.filter(c => categoryIds.includes(c.id));
     if (selectedCats.length === 0) return;
 
-    const totalDue = selectedCats.reduce((acc, c) => acc + c.defaultPrice, 0);
+    const calculatedTotal = selectedCats.reduce((acc, c) => acc + c.defaultPrice, 0);
+    const effectiveTotalDue = totalDue !== undefined ? totalDue : calculatedTotal;
     const categoryNames = selectedCats.map(c => c.name);
 
     try {
@@ -309,9 +351,9 @@ export default function App() {
         proprietor,
         categoryIds,
         categoryNames,
-        totalDue,
-        totalPaid: 0,
-        status: 'Not Paid',
+        totalDue: effectiveTotalDue,
+        totalPaid,
+        status: totalPaid >= effectiveTotalDue ? 'Paid' : totalPaid > 0 ? 'Partial' : 'Not Paid',
         phone,
         photo,
         qrCode: `V-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
@@ -323,14 +365,15 @@ export default function App() {
     }
   };
 
-  const updateVendor = async (id: string, name: string, proprietor: string, categoryIds: string[], phone: string, totalPaid: number) => {
+  const updateVendor = async (id: string, name: string, proprietor: string, categoryIds: string[], phone: string, totalPaid: number, totalDue?: number) => {
     if (!profile || profile.role !== 'admin') return;
     const selectedCats = categories.filter(c => categoryIds.includes(c.id));
     if (selectedCats.length === 0) return;
 
-    const totalDue = selectedCats.reduce((acc, c) => acc + c.defaultPrice, 0);
+    const calculatedTotal = selectedCats.reduce((acc, c) => acc + c.defaultPrice, 0);
+    const effectiveTotalDue = totalDue !== undefined ? totalDue : calculatedTotal;
     const categoryNames = selectedCats.map(c => c.name);
-    const status = totalPaid >= totalDue ? 'Paid' : totalPaid > 0 ? 'Partial' : 'Not Paid';
+    const status = totalPaid >= effectiveTotalDue ? 'Paid' : totalPaid > 0 ? 'Partial' : 'Not Paid';
 
     try {
       await updateDoc(doc(db, 'vendors', id), {
@@ -338,15 +381,16 @@ export default function App() {
         proprietor,
         categoryIds,
         categoryNames,
-        totalDue,
+        totalDue: effectiveTotalDue,
         totalPaid,
         status,
-        phone
+        phone,
+        updatedAt: new Date().toISOString()
       });
-      addToast('Vendor profile updated successfully.', 'success');
+      addToast('Vendor profile updated.', 'success');
     } catch (err) {
       console.error(err);
-      addToast('Failed to update vendor.', 'error');
+      addToast('Failed to update profile.', 'error');
     }
   };
 
@@ -1070,6 +1114,7 @@ export default function App() {
                   onAddCategory={addCategory}
                   onUpdateCategory={updateCategory}
                   onDeleteCategory={deleteCategory}
+                  onSyncRates={syncGlobalRates}
                 />
               )}
             </motion.div>
@@ -2079,8 +2124,8 @@ function VendorsView({
         <VendorModal 
           categories={categories} 
           onClose={() => setIsAddingVendor(false)} 
-          onSubmit={(name: string, proprietor: string, catIds: string[], phone: string, photo: string) => {
-            onAddVendor(name, proprietor, catIds, phone, photo);
+          onSubmit={(name: string, proprietor: string, catIds: string[], phone: string, photo: string, totalPaid: number, totalDue: number) => {
+            onAddVendor(name, proprietor, catIds, phone, photo, totalPaid, totalDue);
             setIsAddingVendor(false);
           }} 
         />
@@ -2091,8 +2136,8 @@ function VendorsView({
           vendor={editingVendor}
           categories={categories} 
           onClose={() => setEditingVendor(null)} 
-          onSubmit={(name: string, proprietor: string, catIds: string[], phone: string, photo: string, totalPaid: number) => {
-            onUpdateVendor(editingVendor.id, name, proprietor, catIds, phone, totalPaid);
+          onSubmit={(name: string, proprietor: string, catIds: string[], phone: string, photo: string, totalPaid: number, totalDue: number) => {
+            onUpdateVendor(editingVendor.id, name, proprietor, catIds, phone, totalPaid, totalDue);
             setEditingVendor(null);
           }} 
         />
@@ -2121,6 +2166,7 @@ function VendorModal({ categories, onClose, onSubmit, vendor }: any) {
   const [phone, setPhone] = useState(vendor?.phone || '');
   const [photo, setPhoto] = useState(vendor?.photo || '');
   const [totalPaid, setTotalPaid] = useState<string>(vendor?.totalPaid?.toString() || '0');
+  const [totalDueOverride, setTotalDueOverride] = useState<string | null>(vendor?.totalDue?.toString() || null);
   const [selectedCatIds, setSelectedCatIds] = useState<string[]>(vendor?.categoryIds || []);
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2134,19 +2180,21 @@ function VendorModal({ categories, onClose, onSubmit, vendor }: any) {
     }
   };
 
-  const handleFormSubmit = () => {
-    if (!name || selectedCatIds.length === 0) {
-      alert('Please enter establishment name and select at least one trade');
-      return;
-    }
-    onSubmit(name, proprietor, selectedCatIds, phone, photo, parseFloat(totalPaid || '0'));
-  };
-
   const calculatedTotal = useMemo(() => {
     return categories
       .filter((c: Category) => selectedCatIds.includes(c.id))
       .reduce((acc: number, c: Category) => acc + c.defaultPrice, 0);
   }, [categories, selectedCatIds]);
+
+  const effectiveTotalDue = totalDueOverride !== null ? parseFloat(totalDueOverride || '0') : calculatedTotal;
+
+  const handleFormSubmit = () => {
+    if (!name || selectedCatIds.length === 0) {
+      alert('Please enter establishment name and select at least one trade');
+      return;
+    }
+    onSubmit(name, proprietor, selectedCatIds, phone, photo, parseFloat(totalPaid || '0'), effectiveTotalDue);
+  };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-6">
@@ -2231,24 +2279,30 @@ function VendorModal({ categories, onClose, onSubmit, vendor }: any) {
             
             <div className="grid grid-cols-2 gap-4 mt-2">
                <div className="p-3 bg-orange-50 rounded-xl border border-orange-100 flex flex-col justify-center">
-                 <span className="text-[9px] font-bold text-orange-600 uppercase tracking-widest leading-none mb-1">Total Due</span>
-                 <span className="text-sm font-black text-orange-700">₦{calculatedTotal.toLocaleString()}</span>
+                 <span className="text-[9px] font-bold text-orange-600 uppercase tracking-widest leading-none mb-1">Expected Amount (Due)</span>
+                 <div className="relative">
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 text-[10px] font-bold text-orange-400 shrink-0">₦</span>
+                    <input 
+                      type="number"
+                      className="w-full pl-3 bg-transparent text-sm font-black text-orange-700 outline-none border-none p-0 focus:ring-0"
+                      value={totalDueOverride !== null ? totalDueOverride : calculatedTotal}
+                      onChange={(e) => setTotalDueOverride(e.target.value)}
+                    />
+                 </div>
                </div>
                
-               {vendor && (
-                 <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                    <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Adjust Paid (Audit)</label>
-                    <div className="relative">
-                      <span className="absolute left-0 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400 tracking-tighter shrink-0">₦</span>
-                      <input 
-                        type="number"
-                        className="w-full pl-3 bg-transparent text-sm font-black text-gray-700 outline-none border-none p-0 focus:ring-0"
-                        value={totalPaid}
-                        onChange={(e) => setTotalPaid(e.target.value)}
-                      />
-                    </div>
-                 </div>
-               )}
+               <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                  <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Total Paid (Audit)</label>
+                  <div className="relative">
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 text-[10px] font-bold text-gray-400 tracking-tighter shrink-0">₦</span>
+                    <input 
+                      type="number"
+                      className="w-full pl-3 bg-transparent text-sm font-black text-gray-700 outline-none border-none p-0 focus:ring-0"
+                      value={totalPaid}
+                      onChange={(e) => setTotalPaid(e.target.value)}
+                    />
+                  </div>
+               </div>
             </div>
           </div>
         </div>
@@ -2327,7 +2381,7 @@ function PaymentsView({ payments, onPrint }: { payments: Payment[], onPrint: (p:
   );
 }
 
-function AdminView({ categories, profile, onAddCategory, onUpdateCategory, onDeleteCategory }: any) {
+function AdminView({ categories, profile, onAddCategory, onUpdateCategory, onDeleteCategory, onSyncRates }: any) {
   if (profile?.role !== 'admin') return <div className="p-12 text-center text-red-500 font-bold">ACCESS DENIED</div>;
 
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
@@ -2391,6 +2445,13 @@ function AdminView({ categories, profile, onAddCategory, onUpdateCategory, onDel
                   <p className="font-black text-xl italic tracking-tighter text-emerald-400">99.8%</p>
                </div>
              </div>
+             
+             <button 
+              onClick={onSyncRates}
+              className="mt-8 w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+             >
+                <Clock className="w-4 h-4" /> Baseline Sync (Apply Rates)
+             </button>
            </div>
         </div>
 

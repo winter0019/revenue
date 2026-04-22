@@ -16,15 +16,15 @@ service cloud.firestore {
     }
 
     function getRole() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'none');
     }
 
     function isAdmin() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getRole() == 'admin';
+      return isSignedIn() && getRole() == 'admin';
     }
 
     function isStaff() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getRole() in ['admin', 'staff'];
+      return isSignedIn() && getRole() in ['admin', 'staff'];
     }
 
     function isValidId(id) {
@@ -43,48 +43,48 @@ service cloud.firestore {
     function isValidCategory(data) {
       return data.name is string && data.name.size() > 0 && data.name.size() < 100
         && (data.defaultPrice is number || data.defaultPrice is int)
-        && (data.deleted == null || data.deleted is bool)
-        && (data.color == null || data.color is string);
+        && (data.get('deleted', false) is bool)
+        && (data.get('color', '#10b981') is string);
     }
 
     function isValidVendor(data) {
       return data.name is string && data.name.size() > 0 && data.name.size() < 200
         && (
-             (data.categoryIds is list && data.categoryIds.size() > 0) ||
-             (data.categoryId is string && data.categoryId.size() < 100)
+             (data.get('categoryIds', []) is list && data.categoryIds.size() >= 0) ||
+             (data.get('categoryId', '') is string && data.categoryId.size() < 100)
            )
-        && (data.proprietor == null || (data.proprietor is string && data.proprietor.size() < 200))
+        && (data.get('proprietor', '') is string && data.get('proprietor', '').size() < 200)
         && (data.totalDue is number || data.totalDue is int)
         && (data.totalPaid is number || data.totalPaid is int)
-        && data.status in ['Paid', 'Not Paid', 'Partial']
-        && (data.phone == null || (data.phone is string && data.phone.size() < 40))
-        && (data.photo == null || (data.photo is string && data.photo.size() < 10000000))
-        && (data.qrCode == null || (data.qrCode is string && data.qrCode.size() < 100))
-        && (data.categoryNames == null || data.categoryNames is list)
-        && (data.lastPaymentDate == null || data.lastPaymentDate is string || data.lastPaymentDate is timestamp);
+        && data.status in ['Paid', 'Not Paid', 'Partial', 'Unpaid']
+        && (data.get('phone', '') is string && data.get('phone', '').size() < 40)
+        && (data.get('photo', '') is string && data.get('photo', '').size() < 10000001)
+        && (data.get('qrCode', '') is string && data.get('qrCode', '').size() < 128)
+        && (data.get('categoryNames', []) is list)
+        && (data.get('lastPaymentDate', '') is string || data.get('lastPaymentDate', request.time) is timestamp);
     }
 
     function isValidWorker(data) {
       return data.name is string && data.name.size() > 0 && data.name.size() < 200
         && data.role is string && data.role.size() > 0 && data.role.size() < 100
-        && (data.qrCode is string && data.qrCode.size() < 100)
-        && (data.phone == null || (data.phone is string && data.phone.size() < 40))
-        && (data.photo == null || (data.photo is string && data.photo.size() < 10000000))
-        && (data.vendorId == null || (data.vendorId is string && data.vendorId.size() < 100))
-        && (data.vendorName == null || (data.vendorName is string && data.vendorName.size() < 200))
+        && (data.get('qrCode', '') is string && data.get('qrCode', '').size() < 128)
+        && (data.get('phone', '') is string && data.get('phone', '').size() < 40)
+        && (data.get('photo', '') is string && data.get('photo', '').size() < 10000001)
+        && (data.get('vendorId', '') is string && data.get('vendorId', '').size() < 128)
+        && (data.get('vendorName', '') is string && data.get('vendorName', '').size() < 200)
         && (data.createdAt is string || data.createdAt is timestamp)
-        && (data.deleted == null || data.deleted is bool);
+        && (data.get('deleted', false) is bool);
     }
 
     function isValidPayment(data) {
-      return data.vendorId is string && data.vendorId.size() < 100
+      return data.vendorId is string && data.vendorId.size() < 128
         && (data.amount is number || data.amount is int) && data.amount > 0
         && data.collectedBy == request.auth.uid
         && (data.date is string || data.date is timestamp)
-        && data.vendorName is string
-        && data.receiptId is string
-        && data.collectorName is string
-        && (data.notes == null || data.notes is string);
+        && data.vendorName is string && data.vendorName.size() < 200
+        && data.receiptId is string && data.receiptId.size() < 64
+        && data.collectorName is string && data.collectorName.size() < 200
+        && (data.get('notes', '') is string && data.get('notes', '').size() < 1000);
     }
 
     // --- Collections ---
