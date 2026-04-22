@@ -219,37 +219,51 @@ export default function App() {
 
   const syncGlobalRates = async () => {
     if (!adminRole(profile) || initializing) return;
-    if (!confirm('This will update ALL Photographer rates to ₦40,000 and sync other categories to system defaults. Continue?')) return;
+    if (!confirm('This will update ALL Photographer rates to ₦40,000 and sync other categories to system defaults. This also recalculates payment statuses. Continue?')) return;
     
     setInitializing(true);
     let updatedCount = 0;
     try {
-      // 1. Sync Categories
+      // 1. Sync Categories First
       for (const cat of categories) {
         const initial = INITIAL_CATEGORIES.find(ic => ic.name === cat.name);
         if (initial && initial.defaultPrice !== cat.defaultPrice) {
-          await updateDoc(doc(db, 'categories', cat.id), { defaultPrice: initial.defaultPrice });
+          await updateDoc(doc(db, 'categories', cat.id), { 
+            defaultPrice: initial.defaultPrice,
+            updatedAt: new Date().toISOString()
+          });
         }
       }
 
-      // 2. Sync Vendors (Specifically Photographers as requested)
-      const photographerCat = categories.find(c => c.name === 'Photographers');
-      if (photographerCat) {
-        const initial = INITIAL_CATEGORIES.find(ic => ic.name === 'Photographers');
-        const newPrice = initial?.defaultPrice || 40000;
+      // 2. Sync Vendors and Recalculate Status
+      // We'll iterate through all vendors and check if their categories have new prices
+      for (const vendor of vendors) {
+        const vendorCats = categories.filter(c => (vendor.categoryIds || []).includes(c.id));
+        if (vendorCats.length === 0) continue;
 
-        for (const vendor of vendors) {
-          if (vendor.categoryNames.includes('Photographers') && vendor.totalDue !== newPrice) {
-            await updateDoc(doc(db, 'vendors', vendor.id), { totalDue: newPrice });
-            updatedCount++;
-          }
+        // Calculate what the total due SHOULD be based on CURRENT category prices in INITIAL_CATEGORIES
+        const targetTotalDue = vendorCats.reduce((acc, vc) => {
+          const initial = INITIAL_CATEGORIES.find(ic => ic.name === vc.name);
+          return acc + (initial ? initial.defaultPrice : vc.defaultPrice);
+        }, 0);
+
+        if (vendor.totalDue !== targetTotalDue) {
+          const totalPaid = vendor.totalPaid || 0;
+          const newStatus = totalPaid >= targetTotalDue ? 'Paid' : totalPaid > 0 ? 'Partial' : 'Not Paid';
+          
+          await updateDoc(doc(db, 'vendors', vendor.id), { 
+            totalDue: targetTotalDue,
+            status: newStatus,
+            updatedAt: new Date().toISOString()
+          });
+          updatedCount++;
         }
       }
       
-      addToast(`Synchronization complete. Updated ${updatedCount} photographer records.`, 'success');
+      addToast(`Synchronization complete. Updated ${updatedCount} vendor records.`, 'success');
     } catch (err) {
-      console.error(err);
-      addToast('Synchronization failed.', 'error');
+      console.error('Sync Error:', err);
+      addToast('Synchronization failed. Check console for details.', 'error');
     } finally {
       setInitializing(false);
     }
