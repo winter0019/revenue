@@ -153,11 +153,17 @@ export default function App() {
     }
 
     const unsubCategories = onSnapshot(collection(db, 'categories'), (snap) => {
-      setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() } as Category)));
+      setCategories(snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as Category))
+        .filter(c => !c.deleted)
+      );
     });
 
     const unsubVendors = onSnapshot(query(collection(db, 'vendors'), orderBy('name')), (snap) => {
-      setVendors(snap.docs.map(d => ({ id: d.id, ...d.data() } as Vendor)));
+      setVendors(snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as Vendor))
+        .filter(v => !v.deleted)
+      );
     });
 
     const unsubPayments = onSnapshot(query(collection(db, 'payments'), orderBy('date', 'desc')), (snap) => {
@@ -236,8 +242,8 @@ export default function App() {
       }
 
       // 2. Sync Vendors and Recalculate Status
-      // We'll iterate through all vendors and check if their categories have new prices
-      for (const vendor of vendors) {
+      // Filter out deleted vendors for sync
+      for (const vendor of vendors.filter(v => !v.deleted)) {
         const vendorCats = categories.filter(c => (vendor.categoryIds || []).includes(c.id));
         if (vendorCats.length === 0) continue;
 
@@ -405,6 +411,66 @@ export default function App() {
     } catch (err) {
       console.error(err);
       addToast('Failed to update profile.', 'error');
+    }
+  };
+
+  const deleteVendor = async (id: string) => {
+    if (!profile || profile.role !== 'admin') return;
+    if (!confirm('Are you sure you want to PERMANENTLY remove this establishment from the registry? All associated data will be lost.')) return;
+    try {
+      await updateDoc(doc(db, 'vendors', id), { 
+        deleted: true,
+        updatedAt: new Date().toISOString()
+      });
+      addToast('Establishment removed from registry.', 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to remove establishment.', 'error');
+    }
+  };
+
+  const cleanupDuplicates = async () => {
+    if (!profile || profile.role !== 'admin' || initializing) return;
+    if (!confirm('This will automatically identify and remove duplicate vendor records based on Name and Proprietor. Continue?')) return;
+    
+    setInitializing(true);
+    let removedCount = 0;
+    try {
+      const seen = new Set();
+      const duplicates = [];
+
+      // Sort by status and payments so we keep the most "complete" record
+      const sortedVendors = [...vendors].sort((a, b) => {
+        if (a.status === 'Paid' && b.status !== 'Paid') return -1;
+        if (a.status !== 'Paid' && b.status === 'Paid') return 1;
+        return b.totalPaid - a.totalPaid;
+      });
+
+      for (const v of sortedVendors) {
+        if (v.deleted) continue;
+        const key = `${v.name.toLowerCase().trim()}_${(v.proprietor || '').toLowerCase().trim()}`;
+        if (seen.has(key)) {
+          duplicates.push(v);
+        } else {
+          seen.add(key);
+        }
+      }
+
+      for (const dup of duplicates) {
+        await updateDoc(doc(db, 'vendors', dup.id), { 
+          deleted: true, 
+          duplicateRecord: true,
+          updatedAt: new Date().toISOString()
+        });
+        removedCount++;
+      }
+
+      addToast(`Cleanup complete. Purged ${removedCount} duplicate records from registry.`, 'success');
+    } catch (err) {
+      console.error('Cleanup Error:', err);
+      addToast('Duplicate cleanup failed.', 'error');
+    } finally {
+      setInitializing(false);
     }
   };
 
@@ -1104,6 +1170,7 @@ export default function App() {
                   onAddWorker={addWorker}
                   onDeleteWorker={deleteWorker}
                   onUpdatePhoto={updateVendorPhoto}
+                  onDeleteVendor={deleteVendor}
                   addToast={addToast}
                 />
               )}
@@ -1129,6 +1196,7 @@ export default function App() {
                   onUpdateCategory={updateCategory}
                   onDeleteCategory={deleteCategory}
                   onSyncRates={syncGlobalRates}
+                  onCleanupDuplicates={cleanupDuplicates}
                 />
               )}
             </motion.div>
@@ -1872,6 +1940,7 @@ function VendorsView({
   onAddWorker, 
   onDeleteWorker, 
   onUpdatePhoto,
+  onDeleteVendor,
   addToast
 }: any) {
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
@@ -1988,9 +2057,14 @@ function VendorsView({
                  </button>
                  
                  {profile?.role === 'admin' && (
-                   <button onClick={() => setEditingVendor(v)} className="p-2 text-gray-400 hover:text-orange-600 transition-colors" title="Edit Profile">
-                      <Edit2 size={20} />
-                   </button>
+                   <div className="flex items-center gap-2">
+                     <button onClick={() => setEditingVendor(v)} className="p-2 text-gray-400 hover:text-orange-600 transition-colors" title="Edit Profile">
+                        <Edit2 size={20} />
+                     </button>
+                     <button onClick={() => onDeleteVendor(v.id)} className="p-2 text-gray-400 hover:text-red-500 transition-colors" title="Remove Record">
+                        <Trash2 size={20} />
+                     </button>
+                   </div>
                  )}
 
                  <button onClick={() => onPrintID(v, 'vendor')} className="p-2 text-gray-400 hover:text-emerald-600 transition-colors" title="Print ID">
@@ -2395,7 +2469,7 @@ function PaymentsView({ payments, onPrint }: { payments: Payment[], onPrint: (p:
   );
 }
 
-function AdminView({ categories, profile, onAddCategory, onUpdateCategory, onDeleteCategory, onSyncRates }: any) {
+function AdminView({ categories, profile, onAddCategory, onUpdateCategory, onDeleteCategory, onSyncRates, onCleanupDuplicates }: any) {
   if (profile?.role !== 'admin') return <div className="p-12 text-center text-red-500 font-bold">ACCESS DENIED</div>;
 
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
@@ -2460,12 +2534,21 @@ function AdminView({ categories, profile, onAddCategory, onUpdateCategory, onDel
                </div>
              </div>
              
-             <button 
-              onClick={onSyncRates}
-              className="mt-8 w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
-             >
-                <Clock className="w-4 h-4" /> Baseline Sync (Apply Rates)
-             </button>
+             <div className="flex flex-col gap-3 mt-8">
+               <button 
+                onClick={onSyncRates}
+                className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+               >
+                  <Clock className="w-4 h-4" /> Baseline Sync (Apply Rates)
+               </button>
+
+               <button 
+                onClick={onCleanupDuplicates}
+                className="w-full py-4 bg-[#1e293b] hover:bg-[#334155] text-[#cbd5e1] rounded-2xl font-black uppercase tracking-widest text-[10px] active:scale-95 transition-all flex items-center justify-center gap-2 border border-white/5"
+               >
+                  <Trash2 className="w-4 h-4" /> Auto-Cleanup Duplicates
+               </button>
+             </div>
            </div>
         </div>
 

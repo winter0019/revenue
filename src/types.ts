@@ -4,6 +4,8 @@ export interface Category {
   defaultPrice: number;
   color: string;
   maxHelpers?: number;
+  deleted?: boolean;
+  updatedAt?: string;
 }
 
 export interface Vendor {
@@ -14,11 +16,14 @@ export interface Vendor {
   categoryNames: string[];
   totalDue: number;
   totalPaid: number;
-  status: 'Paid' | 'Not Paid' | 'Partial';
+  status: 'Paid' | 'Not Paid' | 'Partial' | 'Unpaid';
   lastPaymentDate?: string;
   phone?: string;
   photo?: string;
   qrCode?: string;
+  deleted?: boolean;
+  duplicateRecord?: boolean;
+  updatedAt?: string;
 }
 
 export interface Worker {
