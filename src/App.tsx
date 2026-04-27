@@ -225,7 +225,7 @@ export default function App() {
 
   const syncGlobalRates = async () => {
     if (!adminRole(profile) || initializing) return;
-    if (!confirm('This will update ALL Photographer rates to ₦40,000 and sync other categories to system defaults. This also recalculates payment statuses. Continue?')) return;
+    if (!confirm('This will update ALL Photographer rates to ₦40,000, Tailor rates to ₦25,000, and sync all other categories to their baseline defaults. This also recalculates all payment statuses based on revised rates. Continue?')) return;
     
     setInitializing(true);
     let updatedCount = 0;
@@ -270,6 +270,108 @@ export default function App() {
     } catch (err) {
       console.error('Sync Error:', err);
       addToast('Synchronization failed. Check console for details.', 'error');
+    } finally {
+      setInitializing(false);
+    }
+  };
+
+  const syncBaselineVendors = async () => {
+    if (!profile || profile.role !== 'admin' || initializing) return;
+    if (!confirm('This will identify any missing personnel from the master group list (Tailors, Photographers, etc.) and enroll them automatically. Continue?')) return;
+    
+    setInitializing(true);
+    let addedCount = 0;
+    try {
+      const catMap: Record<string, string> = {};
+      categories.forEach(c => catMap[c.name] = c.id);
+
+      for (const [catName, vendorList] of Object.entries(VENDOR_MAP)) {
+        const catId = catMap[catName];
+        if (!catId) continue;
+        
+        const existingInCat = vendors.filter(v => (v.categoryNames || []).includes(catName));
+        const existingNames = new Set(existingInCat.map(v => v.name.toLowerCase().trim()));
+
+        for (const vName of vendorList) {
+          if (!existingNames.has(vName.toLowerCase().trim())) {
+            const defaultPrice = INITIAL_CATEGORIES.find(c => c.name === catName)?.defaultPrice || 0;
+            const vDoc = doc(collection(db, 'vendors'));
+            await setDoc(vDoc, {
+              name: vName,
+              categoryIds: [catId],
+              categoryNames: [catName],
+              totalDue: defaultPrice,
+              totalPaid: 0,
+              status: 'Not Paid',
+              qrCode: `V-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
+              createdAt: new Date().toISOString()
+            });
+            addedCount++;
+          }
+        }
+      }
+      addToast(`Baseline reconciliation complete. Enrolled ${addedCount} missing participants.`, 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Personnel reconciliation failed.', 'error');
+    } finally {
+      setInitializing(false);
+    }
+  };
+
+  const handleCategoryPayment = async (categoryId: string, amountPerVendor: number) => {
+    if (!user || !profile || initializing) return;
+    const category = categories.find(c => c.id === categoryId);
+    if (!category) return;
+
+    const vendorsInCat = vendors.filter(v => (v.categoryIds || []).includes(categoryId) && v.status !== 'Paid');
+    if (vendorsInCat.length === 0) {
+      addToast(`All vendors in ${category.name} are already cleared.`, 'success');
+      return;
+    }
+
+    if (!confirm(`Deploy batch payment of ₦${amountPerVendor.toLocaleString()} for all ${vendorsInCat.length} pending vendors in ${category.name}?`)) return;
+
+    setInitializing(true);
+    let count = 0;
+    try {
+      for (const vendor of vendorsInCat) {
+        const receiptId = `BCH-${Date.now().toString().slice(-4)}-${count}`;
+        await runTransaction(db, async (transaction) => {
+          const vRef = doc(db, 'vendors', vendor.id);
+          const vSnap = await transaction.get(vRef);
+          if (!vSnap.exists()) return;
+          
+          const vData = vSnap.data();
+          const currentPaid = vData.totalPaid || 0;
+          const totalDue = vData.totalDue || 0;
+          const newPaid = currentPaid + amountPerVendor;
+          const status = newPaid >= totalDue ? 'Paid' : newPaid > 0 ? 'Partial' : 'Not Paid';
+          
+          transaction.update(vRef, {
+            totalPaid: newPaid,
+            status: status,
+            lastPaymentDate: new Date().toISOString()
+          });
+
+          const pRef = doc(collection(db, 'payments'));
+          transaction.set(pRef, {
+            vendorId: vendor.id,
+            vendorName: vendor.name,
+            amount: amountPerVendor,
+            date: new Date().toISOString(),
+            receiptId: receiptId,
+            collectedBy: user.uid,
+            collectorName: profile.name || 'Admin',
+            notes: `Batch Category Payment: ${category.name}`
+          });
+        });
+        count++;
+      }
+      addToast(`Batch processing complete. Recorded ${count} payments for ${category.name}.`, 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Batch payment failed partially.', 'error');
     } finally {
       setInitializing(false);
     }
@@ -1196,6 +1298,8 @@ export default function App() {
                   onUpdateCategory={updateCategory}
                   onDeleteCategory={deleteCategory}
                   onSyncRates={syncGlobalRates}
+                  onSyncBaselineVendors={syncBaselineVendors}
+                  onCategoryGroupPayment={handleCategoryPayment}
                   onCleanupDuplicates={cleanupDuplicates}
                 />
               )}
@@ -2469,7 +2573,7 @@ function PaymentsView({ payments, onPrint }: { payments: Payment[], onPrint: (p:
   );
 }
 
-function AdminView({ categories, profile, onAddCategory, onUpdateCategory, onDeleteCategory, onSyncRates, onCleanupDuplicates }: any) {
+function AdminView({ categories, profile, onAddCategory, onUpdateCategory, onDeleteCategory, onSyncRates, onSyncBaselineVendors, onCategoryGroupPayment, onCleanupDuplicates }: any) {
   if (profile?.role !== 'admin') return <div className="p-12 text-center text-red-500 font-bold">ACCESS DENIED</div>;
 
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
@@ -2491,15 +2595,37 @@ function AdminView({ categories, profile, onAddCategory, onUpdateCategory, onDel
            {categories.filter((c: any) => !c.deleted).map((c: any) => (
              <div 
                 key={c.id} 
-                onClick={() => setSelectedCategory(c)}
-                className="flex items-center justify-between p-4 rounded-xl bg-[#f8fafc] border border-[#e2e8f0] cursor-pointer hover:bg-white hover:shadow-md transition-all group"
+                className="p-4 rounded-xl bg-[#f8fafc] border border-[#e2e8f0] hover:bg-white hover:shadow-md transition-all group"
               >
-               <div>
-                  <p className="text-sm font-bold text-[#0f172a] group-hover:text-emerald-600 transition-colors">{c.name}</p>
-                  <p className="text-[11px] font-bold text-[#64748b] uppercase tracking-wide">Base Rate: ₦{c.defaultPrice.toLocaleString()}</p>
-               </div>
-               <div className="bg-white p-1.5 rounded-lg border border-[#e2e8f0] text-[#cbd5e1] group-hover:text-emerald-500 group-hover:border-emerald-200 transition-all">
-                  <ChevronRight className="w-4 h-4" />
+               <div className="flex items-center justify-between mb-3">
+                 <div onClick={() => setSelectedCategory(c)} className="cursor-pointer">
+                    <p className="text-sm font-bold text-[#0f172a] group-hover:text-emerald-600 transition-colors">{c.name}</p>
+                    <p className="text-[11px] font-bold text-[#64748b] uppercase tracking-wide">Base Rate: ₦{c.defaultPrice.toLocaleString()}</p>
+                    {VENDOR_MAP[c.name] && (
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 text-[8px] font-black uppercase rounded border border-blue-100">
+                          {VENDOR_MAP[c.name].length} Members
+                        </span>
+                        <span className="text-[9px] font-bold text-[#94a3b8]">
+                          Target: ₦{(VENDOR_MAP[c.name].length * c.defaultPrice).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                 </div>
+                 <div className="flex gap-2">
+                    <button 
+                      onClick={() => {
+                        const amount = prompt(`Enter amount paid for each vendor in ${c.name}:`, c.defaultPrice.toString());
+                        if (amount) onCategoryGroupPayment(c.id, parseFloat(amount));
+                      }}
+                      className="px-3 py-1.5 bg-emerald-100 text-emerald-700 text-[9px] font-black uppercase rounded-lg hover:bg-emerald-200 transition-all border border-emerald-200"
+                    >
+                      Group Pay
+                    </button>
+                    <button onClick={() => setSelectedCategory(c)} className="bg-white p-1.5 rounded-lg border border-[#e2e8f0] text-[#cbd5e1] hover:text-emerald-500 hover:border-emerald-200 transition-all">
+                       <Edit2 className="w-3 h-3" />
+                    </button>
+                 </div>
                </div>
              </div>
            ))}
@@ -2539,7 +2665,14 @@ function AdminView({ categories, profile, onAddCategory, onUpdateCategory, onDel
                 onClick={onSyncRates}
                 className="w-full py-4 bg-emerald-500 hover:bg-emerald-400 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
                >
-                  <Clock className="w-4 h-4" /> Baseline Sync (Apply Rates)
+                  <Clock className="w-4 h-4" /> Baseline Rate Sync
+               </button>
+
+               <button 
+                onClick={onSyncBaselineVendors}
+                className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-blue-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+               >
+                  <Users className="w-4 h-4" /> Reconcile Baseline Registry
                </button>
 
                <button 

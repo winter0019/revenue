@@ -45,6 +45,6 @@ export const VENDOR_MAP: Record<string, string[]> = {
   'Shoe Maker': ['Tsiga', 'Umar Batsari'],
   'Meat Pie (Earpie)': ['Pie'],
   'Photographers': ['Photographer 1', 'Photographer 2', 'Photographer 3', 'Photographer 4', 'Photographer 5'],
-  'Tailors': Array.from({ length: 15 }, (_, i) => `Tailor ${i + 1}`),
+  'Tailors': Array.from({ length: 16 }, (_, i) => `Tailor ${i + 1}`),
   'Fruit Seller': ['Shakaf']
 };
